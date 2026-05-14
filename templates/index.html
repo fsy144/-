@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+
+{% block title %}扫码出入库 - 库存管理系统{% endblock %}
+
+{% block page_title %}扫码出入库{% endblock %}
+
+{% block content %}
+<!-- 扫码操作卡片 -->
+<div class="card">
+    <div class="card-header">
+        <i class="fa fa-barcode"></i> 条码扫描
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-8">
+                <div class="input-group input-group-lg mb-3">
+                    <input type="text" id="barcodeInput" class="form-control" 
+                           placeholder="请用扫码枪扫描条码或点击手机扫码" autofocus>
+                    <button class="btn btn-primary" onclick="searchProduct()">查询</button>
+                    <button class="btn btn-success" onclick="openScanner()">
+                        <i class="fa fa-mobile"></i> 手机扫码
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 产品信息显示区 -->
+        <div id="productInfo" class="d-none">
+            <div class="alert alert-info">
+                <h6>产品信息：</h6>
+                <p id="productName"></p>
+                <p id="productStock"></p>
+            </div>
+
+            <!-- 出入库操作表单 -->
+            <form id="operationForm" class="row g-3">
+                <input type="hidden" id="productId">
+                <div class="col-md-2">
+                    <select id="operationType" class="form-select">
+                        <option value="in">入库</option>
+                        <option value="out">出库</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <input type="number" id="quantity" class="form-control" placeholder="数量" value="1" min="1">
+                </div>
+                <div class="col-md-2">
+                    <input type="text" id="operator" class="form-control" placeholder="操作人">
+                </div>
+                <div class="col-md-4">
+                    <input type="text" id="remark" class="form-control" placeholder="备注（可选）">
+                </div>
+                <div class="col-md-2">
+                    <button type="button" id="submitBtn" class="btn btn-primary w-100">确认操作</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- 未找到产品时显示添加表单 -->
+        <div id="addProductForm" class="d-none">
+            <div class="alert alert-warning">
+                <h6>未找到该条码对应的产品，请添加新产品：</h6>
+            </div>
+            <form id="newProductForm" class="row g-3">
+                <input type="hidden" id="newBarcode">
+                <div class="col-md-3">
+                    <input type="text" id="newProductName" class="form-control" placeholder="产品名称" required>
+                </div>
+                <div class="col-md-2">
+                    <input type="text" id="newProductSpec" class="form-control" placeholder="规格">
+                </div>
+                <div class="col-md-2">
+                    <input type="text" id="newProductUnit" class="form-control" placeholder="单位" value="个">
+                </div>
+                <div class="col-md-3">
+                    <button type="button" id="addProductBtn" class="btn btn-success">添加产品</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 库存列表卡片 -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fa fa-list"></i> 当前库存</span>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>条码</th>
+                        <th>产品名称</th>
+                        <th>规格</th>
+                        <th>单位</th>
+                        <th>库存数量</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product in products %}
+                    <tr>
+                        <td>{{ product.barcode }}</td>
+                        <td>{{ product.name }}</td>
+                        <td>{{ product.spec or '-' }}</td>
+                        <td>{{ product.unit }}</td>
+                        <td>{{ product.stock }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 手机扫码模态框 -->
+<div class="modal fade" id="scannerModal" tabindex="-1" aria-labelledby="scannerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="scannerModalLabel">手机扫码</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <video id="scannerVideo" width="100%" autoplay playsinline></video>
+                <div class="text-center mt-2 text-muted">请将条码对准摄像头</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- ZXing条码扫描库 -->
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.0/umd/index.min.js"></script>
+
+<script>
+    // 扫码枪支持：监听回车事件
+    $('#barcodeInput').on('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            searchProduct();
+        }
+    });
+
+    // 查询产品
+    function searchProduct() {
+        const barcode = $('#barcodeInput').val().trim();
+        if (!barcode) return;
+
+        $.get(`/api/product/${barcode}`, function(data) {
+            if (data.success) {
+                // 显示产品信息
+                const product = data.data;
+                $('#productId').val(product.id);
+                $('#productName').text(`名称：${product.name}${product.spec ? ' (' + product.spec + ')' : ''}`);
+                $('#productStock').text(`当前库存：${product.stock} ${product.unit}`);
+                $('#productInfo').removeClass('d-none');
+                $('#addProductForm').addClass('d-none');
+                
+                // 清空输入框，准备下一次扫描
+                $('#barcodeInput').val('');
+                $('#barcodeInput').focus();
+            } else {
+                // 显示添加产品表单
+                $('#newBarcode').val(barcode);
+                $('#addProductForm').removeClass('d-none');
+                $('#productInfo').addClass('d-none');
+                $('#newProductName').focus();
+            }
+        });
+    }
+
+    // 提交出入库操作
+    $('#submitBtn').on('click', function() {
+        const productId = $('#productId').val();
+        const type = $('#operationType').val();
+        const quantity = $('#quantity').val();
+        const operator = $('#operator').val();
+        const remark = $('#remark').val();
+
+        const url = type === 'in' ? '/api/stock/in' : '/api/stock/out';
+        
+        $.post(url, {
+            product_id: productId,
+            quantity: quantity,
+            operator: operator,
+            remark: remark
+        }, function(data) {
+            if (data.success) {
+                alert(data.message);
+                // 刷新页面更新库存
+                location.reload();
+            } else {
+                alert(data.message);
+            }
+        });
+    });
+
+    // 添加新产品
+    $('#addProductBtn').on('click', function() {
+        const barcode = $('#newBarcode').val();
+        const name = $('#newProductName').val().trim();
+        const spec = $('#newProductSpec').val().trim();
+        const unit = $('#newProductUnit').val().trim();
+
+        if (!name) {
+            alert('请输入产品名称');
+            return;
+        }
+
+        $.post('/api/product/add', {
+            barcode: barcode,
+            name: name,
+            spec: spec,
+            unit: unit
+        }, function(data) {
+            if (data.success) {
+                alert(data.message);
+                // 自动查询刚添加的产品
+                $('#barcodeInput').val(barcode);
+                searchProduct();
+            } else {
+                alert(data.message);
+            }
+        });
+    });
+
+    // 手机扫码功能
+    let codeReader;
+    let scannerModal;
+
+    function openScanner() {
+        scannerModal = new bootstrap.Modal(document.getElementById('scannerModal'));
+        scannerModal.show();
+        
+        codeReader = new ZXing.BrowserMultiFormatReader();
+        
+        codeReader.decodeFromVideoDevice(null, 'scannerVideo', (result, err) => {
+            if (result) {
+                // 识别成功
+                $('#barcodeInput').val(result.text);
+                scannerModal.hide();
+                codeReader.reset();
+                searchProduct();
+            }
+            if (err && !(err instanceof ZXing.NotFoundException)) {
+                console.error('扫码错误:', err);
+                alert('扫码失败，请重试');
+            }
+        });
+
+        // 关闭模态框时停止摄像头
+        $('#scannerModal').on('hidden.bs.modal', function() {
+            if (codeReader) {
+                codeReader.reset();
+            }
+        });
+    }
+</script>
+{% endblock %}
