@@ -73,7 +73,7 @@
                     <input type="text" id="newProductUnit" class="form-control" placeholder="单位" value="个">
                 </div>
                 <div class="col-md-3">
-                    <button type="button" id="addProductBtn" class="btn btn-success">添加产品</button>
+                    <button type="button" id="addProductBtn" class="btn btn-success">添加并拍照</button>
                 </div>
             </form>
         </div>
@@ -151,8 +151,13 @@
             </div>
             <div class="modal-body">
                 <div class="mb-3">
-                    <input type="text" id="waybillNumber" class="form-control form-control-lg"
-                           placeholder="请输入运单号或扫描运单条码" autofocus>
+                    <div class="input-group input-group-lg">
+                        <input type="text" id="waybillNumber" class="form-control"
+                               placeholder="请输入运单号或扫描运单条码" autofocus>
+                        <button class="btn btn-primary" type="button" onclick="scanWaybill()">
+                            <i class="fa fa-barcode"></i> 扫码
+                        </button>
+                    </div>
                 </div>
                 <div class="d-grid">
                     <button type="button" class="btn btn-primary" onclick="confirmWaybill()">确认运单号</button>
@@ -190,7 +195,7 @@
     </div>
 </div>
 
-<!-- 拍照确认模态框（出库用） -->
+<!-- 拍照确认模态框（通用） -->
 <div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -208,6 +213,22 @@
         </div>
     </div>
 </div>
+
+<!-- 运单号扫码模态框 -->
+<div class="modal fade" id="waybillScannerModal" tabindex="-1" aria-labelledby="waybillScannerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="waybillScannerModalLabel">扫描运单条码</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <video id="waybillScannerVideo" width="100%" autoplay playsinline></video>
+                <div class="text-center mt-2 text-muted">请将运单条码对准摄像头</div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -220,7 +241,10 @@
     let currentWaybill = ''; // 当前运单号
     let scannedProducts = []; // 出库模式下已扫描的产品
     let codeReader;
+    let waybillCodeReader;
     let photoStream;
+    let currentPhotoIndex = -1; // 当前拍照的产品索引
+    let pendingProduct = null; // 待添加的新产品
 
     // 扫码枪支持：监听回车事件
     $('#barcodeInput').on('keypress', function(e) {
@@ -284,7 +308,7 @@
         });
     });
 
-    // 添加新产品
+    // 添加新产品并拍照
     $('#addProductBtn').on('click', function() {
         const barcode = $('#newBarcode').val();
         const name = $('#newProductName').val().trim();
@@ -296,22 +320,73 @@
             return;
         }
 
-        $.post('/api/product/add', {
+        // 保存待添加产品信息
+        pendingProduct = {
             barcode: barcode,
             name: name,
             spec: spec,
             unit: unit
-        }, function(data) {
+        };
+
+        // 关闭扫码模态框（如果打开）
+        $('#scannerModal').modal('hide');
+
+        // 打开拍照模态框
+        openPhotoModalForNewProduct();
+    });
+
+    // 为新产品打开拍照模态框
+    function openPhotoModalForNewProduct() {
+        const photoModal = new bootstrap.Modal(document.getElementById('photoModal'));
+        photoModal.show();
+
+        // 启动后置摄像头
+        navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' }
+        }).then(function(stream) {
+            photoStream = stream;
+            const video = document.getElementById('photoVideo');
+            video.srcObject = stream;
+        }).catch(function(err) {
+            console.error('无法访问摄像头:', err);
+            // 如果后置摄像头不可用，尝试使用默认摄像头
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function(stream) {
+                    photoStream = stream;
+                    const video = document.getElementById('photoVideo');
+                    video.srcObject = stream;
+                }).catch(function(err) {
+                    alert('无法访问摄像头，请检查权限设置');
+                    // 直接添加产品，不拍照
+                    addProductWithoutPhoto();
+                });
+        });
+
+        // 关闭模态框时停止摄像头
+        $('#photoModal').one('hidden.bs.modal', function() {
+            if (photoStream) {
+                photoStream.getTracks().forEach(track => track.stop());
+            }
+            pendingProduct = null;
+        });
+    }
+
+    // 不拍照直接添加产品
+    function addProductWithoutPhoto() {
+        if (!pendingProduct) return;
+
+        $.post('/api/product/add', pendingProduct, function(data) {
             if (data.success) {
-                alert(data.message);
+                alert('产品添加成功');
+                $('#photoModal').modal('hide');
                 // 自动查询刚添加的产品
-                $('#barcodeInput').val(barcode);
+                $('#barcodeInput').val(pendingProduct.barcode);
                 searchProduct();
             } else {
                 alert(data.message);
             }
         });
-    });
+    }
 
     // 打开模式选择
     function openModeSelect() {
@@ -349,6 +424,46 @@
         openScanner();
     }
 
+    // 扫描运单号
+    function scanWaybill() {
+        $('#waybillModal').modal('hide');
+        const waybillScannerModal = new bootstrap.Modal(document.getElementById('waybillScannerModal'));
+        waybillScannerModal.show();
+
+        waybillCodeReader = new ZXing.BrowserMultiFormatReader();
+
+        // 使用后置摄像头扫描运单
+        waybillCodeReader.decodeFromVideoDevice(
+            { facingMode: 'environment' },
+            'waybillScannerVideo',
+            (result, err) => {
+                if (result) {
+                    // 识别成功
+                    const waybill = result.text;
+                    $('#waybillNumber').val(waybill);
+                    waybillCodeReader.reset();
+                    $('#waybillScannerModal').modal('hide');
+
+                    // 重新打开运单号输入模态框
+                    const waybillModal = new bootstrap.Modal(document.getElementById('waybillModal'));
+                    waybillModal.show();
+                    $('#waybillNumber').focus();
+                }
+                if (err && !(err instanceof ZXing.NotFoundException)) {
+                    console.error('运单扫码错误:', err);
+                    alert('扫码失败，请重试');
+                }
+            }
+        );
+
+        // 关闭模态框时停止摄像头
+        $('#waybillScannerModal').one('hidden.bs.modal', function() {
+            if (waybillCodeReader) {
+                waybillCodeReader.reset();
+            }
+        });
+    }
+
     // 手机扫码功能
     function openScanner() {
         const scannerModal = new bootstrap.Modal(document.getElementById('scannerModal'));
@@ -368,20 +483,32 @@
 
         codeReader = new ZXing.BrowserMultiFormatReader();
 
-        codeReader.decodeFromVideoDevice(null, 'scannerVideo', (result, err) => {
-            if (result) {
-                // 识别成功
-                const barcode = result.text;
-                handleScannedBarcode(barcode);
+        // 使用后置摄像头
+        codeReader.decodeFromVideoDevice(
+            { facingMode: 'environment' },
+            'scannerVideo',
+            (result, err) => {
+                if (result) {
+                    // 识别成功
+                    const barcode = result.text;
+                    handleScannedBarcode(barcode);
+                }
+                if (err && !(err instanceof ZXing.NotFoundException)) {
+                    console.error('扫码错误:', err);
+                    // 如果后置摄像头不可用，尝试使用默认摄像头
+                    codeReader.reset();
+                    codeReader.decodeFromVideoDevice(null, 'scannerVideo', (result, err) => {
+                        if (result) {
+                            const barcode = result.text;
+                            handleScannedBarcode(barcode);
+                        }
+                    });
+                }
             }
-            if (err && !(err instanceof ZXing.NotFoundException)) {
-                console.error('扫码错误:', err);
-                alert('扫码失败，请重试');
-            }
-        });
+        );
 
         // 关闭模态框时停止摄像头
-        $('#scannerModal').on('hidden.bs.modal', function() {
+        $('#scannerModal').one('hidden.bs.modal', function() {
             if (codeReader) {
                 codeReader.reset();
             }
@@ -429,14 +556,12 @@
                     updateScannedList();
                 }
             } else {
-                // 未找到产品，提示添加
-                if (confirm(`未找到条码 ${barcode} 对应的产品，是否添加新产品？`)) {
-                    $('#scannerModal').modal('hide');
-                    $('#newBarcode').val(barcode);
-                    $('#addProductForm').removeClass('d-none');
-                    $('#productInfo').addClass('d-none');
-                    $('#newProductName').focus();
-                }
+                // 未找到产品，直接显示添加表单
+                $('#scannerModal').modal('hide');
+                $('#newBarcode').val(barcode);
+                $('#addProductForm').removeClass('d-none');
+                $('#productInfo').addClass('d-none');
+                $('#newProductName').focus();
             }
         });
     }
@@ -461,7 +586,7 @@
                         ${product.photo ? '<span class="badge bg-success ms-1">已拍照</span>' : ''}
                     </div>
                     <div>
-                        <button class="btn btn-sm btn-outline-primary me-1" onclick="takePhoto(${index})">
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="takeProductPhoto(${index})">
                             <i class="fa fa-camera"></i>
                         </button>
                         <button class="btn btn-sm btn-outline-danger" onclick="removeProduct(${index})">
@@ -474,28 +599,36 @@
         });
     }
 
-    // 拍照
-    function takePhoto(index) {
+    // 为产品拍照
+    function takeProductPhoto(index) {
         currentPhotoIndex = index;
         $('#scannerModal').modal('hide');
 
         const photoModal = new bootstrap.Modal(document.getElementById('photoModal'));
         photoModal.show();
 
-        // 启动摄像头
-        navigator.mediaDevices.getUserMedia({ video: true })
-            .then(function(stream) {
-                photoStream = stream;
-                const video = document.getElementById('photoVideo');
-                video.srcObject = stream;
-            })
-            .catch(function(err) {
-                console.error('无法访问摄像头:', err);
-                alert('无法访问摄像头，请检查权限设置');
-            });
+        // 启动后置摄像头
+        navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' }
+        }).then(function(stream) {
+            photoStream = stream;
+            const video = document.getElementById('photoVideo');
+            video.srcObject = stream;
+        }).catch(function(err) {
+            console.error('无法访问摄像头:', err);
+            // 如果后置摄像头不可用，尝试使用默认摄像头
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function(stream) {
+                    photoStream = stream;
+                    const video = document.getElementById('photoVideo');
+                    video.srcObject = stream;
+                }).catch(function(err) {
+                    alert('无法访问摄像头，请检查权限设置');
+                });
+        });
 
         // 关闭模态框时停止摄像头
-        $('#photoModal').on('hidden.bs.modal', function() {
+        $('#photoModal').one('hidden.bs.modal', function() {
             if (photoStream) {
                 photoStream.getTracks().forEach(track => track.stop());
             }
@@ -516,11 +649,27 @@
         // 转换为base64
         const photoData = canvas.toDataURL('image/jpeg', 0.8);
 
-        // 保存到产品信息
-        scannedProducts[currentPhotoIndex].photo = photoData;
+        if (pendingProduct) {
+            // 为新产品拍照
+            pendingProduct.photo_data = photoData;
 
-        // 关闭拍照模态框
-        $('#photoModal').modal('hide');
+            $.post('/api/product/add', pendingProduct, function(data) {
+                if (data.success) {
+                    alert('产品添加成功并已保存照片');
+                    $('#photoModal').modal('hide');
+                    // 自动查询刚添加的产品
+                    $('#barcodeInput').val(pendingProduct.barcode);
+                    searchProduct();
+                } else {
+                    alert(data.message);
+                }
+            });
+        } else if (currentPhotoIndex >= 0) {
+            // 为已扫描产品拍照
+            scannedProducts[currentPhotoIndex].photo = photoData;
+            alert('拍照成功');
+            $('#photoModal').modal('hide');
+        }
     }
 
     // 移除产品

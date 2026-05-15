@@ -187,6 +187,7 @@ def add_product():
         name = request.form.get('name')
         spec = request.form.get('spec', '')
         unit = request.form.get('unit', '个')
+        photo_data = request.form.get('photo_data', '')
 
         # 检查条码是否已存在
         if Product.query.filter_by(barcode=barcode).first():
@@ -201,6 +202,21 @@ def add_product():
 
         db.session.add(product)
         db.session.commit()
+
+        # 如果有照片，保存照片
+        if photo_data:
+            # 解码base64图片
+            header, encoded = photo_data.split(',', 1)
+            data = base64.b64decode(encoded)
+
+            # 生成文件名
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            filename = f'product_{barcode}_{timestamp}.jpg'
+            photo_path = os.path.join('uploads', filename)
+
+            # 保存文件
+            with open(os.path.join(app.static_folder, photo_path), 'wb') as f:
+                f.write(data)
 
         return jsonify({'success': True, 'message': '产品添加成功', 'product_id': product.id})
     except Exception as e:
