@@ -54,7 +54,6 @@ def records(record_type):
     if record_type == 'in':
         records_list = StockRecord.query.filter_by(type='in').order_by(StockRecord.create_time.desc()).all()
     else:
-        # 只取主记录（parent_id 为 NULL）
         records_list = StockRecord.query.filter_by(type='out', parent_id=None).order_by(StockRecord.create_time.desc()).all()
 
     title = '入库记录' if record_type == 'in' else '出库记录'
@@ -184,6 +183,9 @@ def stock_out_batch():
         db.session.add(main_record)
         product.stock -= first_item.get('quantity', 1)
 
+        # 先 flush，获得主记录 id
+        db.session.flush()
+
         # 处理剩余子记录
         for item in items[1:]:
             prod = Product.query.get_or_404(item['product_id'])
@@ -197,16 +199,11 @@ def stock_out_batch():
                 quantity=item.get('quantity', 1),
                 operator=operator,
                 remark='',
-                parent_id=None  # 先保存主记录后获取 id
+                waybill_number=waybill,  # 子记录也保存运单号方便查询
+                parent_id=main_record.id
             )
             db.session.add(sub_record)
             prod.stock -= item.get('quantity', 1)
-
-        db.session.flush()  # 获取 main_record.id
-
-        # 更新子记录的 parent_id
-        for sub in StockRecord.query.filter(StockRecord.parent_id == None, StockRecord.id != main_record.id).all():
-            sub.parent_id = main_record.id
 
         db.session.commit()
         return jsonify({'success': True, 'message': '批量出库成功'})
