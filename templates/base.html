@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>{% block title %}库存管理后台{% endblock %}</title>
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -172,29 +172,117 @@
             background-color: #ec4758;
             border-color: #ec4758;
         }
+
+        .btn-warning {
+            background-color: #f8ac59;
+            border-color: #f8ac59;
+            color: #fff;
+        }
+
+        .btn-warning:hover {
+            background-color: #f7a54a;
+            border-color: #f7a54a;
+            color: #fff;
+        }
+
+        /* 手机端适配 */
+        @media (max-width: 768px) {
+            .sidebar {
+                left: -220px;
+            }
+
+            .sidebar.show {
+                left: 0;
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .top-navbar {
+                padding: 0 15px;
+            }
+
+            .page-content {
+                padding: 10px;
+            }
+
+            .card-body {
+                padding: 15px;
+            }
+
+            .table-responsive {
+                font-size: 12px;
+            }
+
+            .modal-dialog {
+                margin: 10px;
+            }
+
+            .modal-body {
+                padding: 15px;
+            }
+
+            /* 汉堡菜单按钮 */
+            .menu-toggle {
+                display: block !important;
+                margin-right: 15px;
+                font-size: 20px;
+                cursor: pointer;
+            }
+        }
+
+        /* 汉堡菜单按钮 */
+        .menu-toggle {
+            display: none;
+        }
+
+        /* 遮罩层 */
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 999;
+        }
+
+        .overlay.show {
+            display: block;
+        }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
 <body>
+    <!-- 遮罩层（手机端） -->
+    <div class="overlay" id="overlay"></div>
+
     <!-- 侧边栏 -->
-    <div class="sidebar">
+    <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             库存管理系统
         </div>
         <ul class="sidebar-menu">
             <li>
-                <a href="/" class="active">
+                <a href="/" class="{% if request.path == '/' %}active{% endif %}">
                     <i class="fa fa-dashboard"></i> 工作台
+                </a>
+            </li>
+            <li>
+                <a href="/records/in" class="{% if request.path == '/records/in' %}active{% endif %}">
+                    <i class="fa fa-arrow-down"></i> 入库记录
+                </a>
+            </li>
+            <li>
+                <a href="/records/out" class="{% if request.path == '/records/out' %}active{% endif %}">
+                    <i class="fa fa-arrow-up"></i> 出库记录
                 </a>
             </li>
             <li>
                 <a href="#">
                     <i class="fa fa-cubes"></i> 库存管理
-                </a>
-            </li>
-            <li>
-                <a href="#">
-                    <i class="fa fa-exchange"></i> 出入库记录
                 </a>
             </li>
             <li>
@@ -210,6 +298,9 @@
         <!-- 顶部导航栏 -->
         <div class="top-navbar">
             <div class="navbar-left">
+                <span class="menu-toggle" id="menuToggle">
+                    <i class="fa fa-bars"></i>
+                </span>
                 <h5 class="mb-0">{% block page_title %}扫码出入库{% endblock %}</h5>
             </div>
             <div class="navbar-right">
@@ -230,6 +321,22 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- jQuery -->
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+
+    <!-- 手机端侧边栏控制 -->
+    <script>
+        $(document).ready(function() {
+            $('#menuToggle').on('click', function() {
+                $('#sidebar').toggleClass('show');
+                $('#overlay').toggleClass('show');
+            });
+
+            $('#overlay').on('click', function() {
+                $('#sidebar').removeClass('show');
+                $('#overlay').removeClass('show');
+            });
+        });
+    </script>
+
     {% block extra_js %}{% endblock %}
 </body>
 </html>

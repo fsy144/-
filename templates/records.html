@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - 库存管理系统{% endblock %}
+
+{% block page_title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fa fa-list"></i> {{ title }}</span>
+        <div>
+            <a href="/records/in" class="btn btn-sm {% if record_type == 'in' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                入库记录
+            </a>
+            <a href="/records/out" class="btn btn-sm {% if record_type == 'out' %}btn-warning{% else %}btn-outline-warning{% endif %} ms-1">
+                出库记录
+            </a>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>操作时间</th>
+                        <th>产品条码</th>
+                        <th>产品名称</th>
+                        <th>规格</th>
+                        <th>数量</th>
+                        <th>操作人</th>
+                        {% if record_type == 'out' %}
+                        <th>运单号</th>
+                        <th>产品照片</th>
+                        {% endif %}
+                        <th>备注</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in records %}
+                    <tr>
+                        <td>{{ record.create_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td>{{ record.product.barcode }}</td>
+                        <td>{{ record.product.name }}</td>
+                        <td>{{ record.product.spec or '-' }}</td>
+                        <td>{{ record.quantity }} {{ record.product.unit }}</td>
+                        <td>{{ record.operator or '-' }}</td>
+                        {% if record_type == 'out' %}
+                        <td>{{ record.waybill_number or '-' }}</td>
+                        <td>
+                            {% if record.photo_path %}
+                            <a href="{{ url_for('static', filename=record.photo_path) }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                <i class="fa fa-image"></i> 查看
+                            </a>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                        <td>{{ record.remark or '-' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="{% if record_type == 'out' %}9{% else %}7{% endif %}" class="text-center text-muted">
+                            暂无记录
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

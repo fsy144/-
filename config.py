@@ -13,4 +13,7 @@ SQLALCHEMY_TRACK_MODIFICATIONS = False
 SECRET_KEY = secrets.token_hex(32)
 
 # 调试模式
-DEBUG = False
+DEBUG = True
+
+# 最大上传大小（10MB）
+MAX_CONTENT_LENGTH = 10 * 1024 * 1024

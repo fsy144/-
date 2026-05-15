@@ -17,7 +17,7 @@
                     <input type="text" id="barcodeInput" class="form-control" 
                            placeholder="请用扫码枪扫描条码或点击手机扫码" autofocus>
                     <button class="btn btn-primary" onclick="searchProduct()">查询</button>
-                    <button class="btn btn-success" onclick="openScanner()">
+                    <button class="btn btn-success" onclick="openModeSelect()">
                         <i class="fa fa-mobile"></i> 手机扫码
                     </button>
                 </div>
@@ -47,10 +47,10 @@
                 <div class="col-md-2">
                     <input type="text" id="operator" class="form-control" placeholder="操作人">
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <input type="text" id="remark" class="form-control" placeholder="备注（可选）">
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-3">
                     <button type="button" id="submitBtn" class="btn btn-primary w-100">确认操作</button>
                 </div>
             </form>
@@ -113,17 +113,97 @@
     </div>
 </div>
 
-<!-- 手机扫码模态框 -->
-<div class="modal fade" id="scannerModal" tabindex="-1" aria-labelledby="scannerModalLabel" aria-hidden="true">
+<!-- 模式选择模态框 -->
+<div class="modal fade" id="modeSelectModal" tabindex="-1" aria-labelledby="modeSelectModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="scannerModalLabel">手机扫码</h5>
+                <h5 class="modal-title" id="modeSelectModalLabel">选择操作模式</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div class="row">
+                    <div class="col-6 mb-3">
+                        <button class="btn btn-primary w-100 py-4" onclick="startScan('in')">
+                            <i class="fa fa-arrow-down fa-2x mb-2"></i><br>
+                            入库模式
+                        </button>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <button class="btn btn-warning w-100 py-4" onclick="startScan('out')">
+                            <i class="fa fa-arrow-up fa-2x mb-2"></i><br>
+                            出库模式
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 运单号输入模态框（出库用） -->
+<div class="modal fade" id="waybillModal" tabindex="-1" aria-labelledby="waybillModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="waybillModalLabel">请输入运单号</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <input type="text" id="waybillNumber" class="form-control form-control-lg"
+                           placeholder="请输入运单号或扫描运单条码" autofocus>
+                </div>
+                <div class="d-grid">
+                    <button type="button" class="btn btn-primary" onclick="confirmWaybill()">确认运单号</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 手机扫码模态框 -->
+<div class="modal fade" id="scannerModal" tabindex="-1" aria-labelledby="scannerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="scannerModalLabel">
+                    <span id="scanModeText">扫码入库</span>
+                    <span id="waybillDisplay" class="ms-2 text-muted"></span>
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <video id="scannerVideo" width="100%" autoplay playsinline></video>
                 <div class="text-center mt-2 text-muted">请将条码对准摄像头</div>
+
+                <!-- 出库模式下显示已扫描产品列表 -->
+                <div id="outboundList" class="d-none mt-3">
+                    <h6>已扫描产品：</h6>
+                    <ul id="scannedProducts" class="list-group"></ul>
+                    <div class="d-grid mt-3">
+                        <button type="button" class="btn btn-success" onclick="confirmOutbound()">确认出库</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 拍照确认模态框（出库用） -->
+<div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="photoModalLabel">请拍摄产品照片</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <video id="photoVideo" width="100%" autoplay playsinline></video>
+                <canvas id="photoCanvas" class="d-none" width="640" height="480"></canvas>
+                <div class="d-grid mt-3">
+                    <button type="button" class="btn btn-primary" onclick="capturePhoto()">拍照</button>
+                </div>
             </div>
         </div>
     </div>
@@ -135,6 +215,13 @@
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.0/umd/index.min.js"></script>
 
 <script>
+    // 全局变量
+    let currentMode = 'in'; // 当前模式：in=入库，out=出库
+    let currentWaybill = ''; // 当前运单号
+    let scannedProducts = []; // 出库模式下已扫描的产品
+    let codeReader;
+    let photoStream;
+
     // 扫码枪支持：监听回车事件
     $('#barcodeInput').on('keypress', function(e) {
         if (e.key === 'Enter') {
@@ -157,7 +244,7 @@
                 $('#productStock').text(`当前库存：${product.stock} ${product.unit}`);
                 $('#productInfo').removeClass('d-none');
                 $('#addProductForm').addClass('d-none');
-                
+
                 // 清空输入框，准备下一次扫描
                 $('#barcodeInput').val('');
                 $('#barcodeInput').focus();
@@ -180,7 +267,7 @@
         const remark = $('#remark').val();
 
         const url = type === 'in' ? '/api/stock/in' : '/api/stock/out';
-        
+
         $.post(url, {
             product_id: productId,
             quantity: quantity,
@@ -226,23 +313,66 @@
         });
     });
 
-    // 手机扫码功能
-    let codeReader;
-    let scannerModal;
+    // 打开模式选择
+    function openModeSelect() {
+        const modeModal = new bootstrap.Modal(document.getElementById('modeSelectModal'));
+        modeModal.show();
+    }
 
+    // 开始扫码
+    function startScan(mode) {
+        currentMode = mode;
+        $('#modeSelectModal').modal('hide');
+
+        if (mode === 'out') {
+            // 出库模式先输入运单号
+            const waybillModal = new bootstrap.Modal(document.getElementById('waybillModal'));
+            waybillModal.show();
+            $('#waybillNumber').val('');
+            $('#waybillNumber').focus();
+        } else {
+            // 入库模式直接打开扫码
+            openScanner();
+        }
+    }
+
+    // 确认运单号
+    function confirmWaybill() {
+        currentWaybill = $('#waybillNumber').val().trim();
+        if (!currentWaybill) {
+            alert('请输入运单号');
+            return;
+        }
+
+        $('#waybillModal').modal('hide');
+        scannedProducts = []; // 清空已扫描产品
+        openScanner();
+    }
+
+    // 手机扫码功能
     function openScanner() {
-        scannerModal = new bootstrap.Modal(document.getElementById('scannerModal'));
+        const scannerModal = new bootstrap.Modal(document.getElementById('scannerModal'));
         scannerModal.show();
-        
+
+        // 更新标题
+        $('#scanModeText').text(currentMode === 'in' ? '扫码入库' : '扫码出库');
+        $('#waybillDisplay').text(currentMode === 'out' ? `运单号：${currentWaybill}` : '');
+
+        // 出库模式显示已扫描列表
+        if (currentMode === 'out') {
+            $('#outboundList').removeClass('d-none');
+            updateScannedList();
+        } else {
+            $('#outboundList').addClass('d-none');
+        }
+
         codeReader = new ZXing.BrowserMultiFormatReader();
-        
+
         codeReader.decodeFromVideoDevice(null, 'scannerVideo', (result, err) => {
             if (result) {
                 // 识别成功
-                $('#barcodeInput').val(result.text);
-                scannerModal.hide();
-                codeReader.reset();
-                searchProduct();
+                const barcode = result.text;
+                handleScannedBarcode(barcode);
             }
             if (err && !(err instanceof ZXing.NotFoundException)) {
                 console.error('扫码错误:', err);
@@ -255,6 +385,193 @@
             if (codeReader) {
                 codeReader.reset();
             }
+            currentWaybill = '';
+            scannedProducts = [];
+        });
+    }
+
+    // 处理扫描到的条码
+    function handleScannedBarcode(barcode) {
+        $.get(`/api/product/${barcode}`, function(data) {
+            if (data.success) {
+                const product = data.data;
+
+                if (currentMode === 'in') {
+                    // 入库模式：直接入库
+                    $.post('/api/stock/in', {
+                        product_id: product.id,
+                        quantity: 1,
+                        operator: '手机扫码'
+                    }, function(res) {
+                        if (res.success) {
+                            alert(`${product.name} 入库成功！当前库存：${res.current_stock}`);
+                        } else {
+                            alert(res.message);
+                        }
+                    });
+                } else {
+                    // 出库模式：添加到待出库列表
+                    const existing = scannedProducts.find(p => p.id === product.id);
+                    if (existing) {
+                        existing.quantity++;
+                    } else {
+                        scannedProducts.push({
+                            id: product.id,
+                            barcode: barcode,
+                            name: product.name,
+                            spec: product.spec,
+                            unit: product.unit,
+                            stock: product.stock,
+                            quantity: 1,
+                            photo: ''
+                        });
+                    }
+                    updateScannedList();
+                }
+            } else {
+                // 未找到产品，提示添加
+                if (confirm(`未找到条码 ${barcode} 对应的产品，是否添加新产品？`)) {
+                    $('#scannerModal').modal('hide');
+                    $('#newBarcode').val(barcode);
+                    $('#addProductForm').removeClass('d-none');
+                    $('#productInfo').addClass('d-none');
+                    $('#newProductName').focus();
+                }
+            }
+        });
+    }
+
+    // 更新已扫描产品列表
+    function updateScannedList() {
+        const list = $('#scannedProducts');
+        list.empty();
+
+        if (scannedProducts.length === 0) {
+            list.append('<li class="list-group-item text-muted">暂无已扫描产品</li>');
+            return;
+        }
+
+        scannedProducts.forEach((product, index) => {
+            const item = $(`
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>${product.name}</strong>
+                        ${product.spec ? `(${product.spec})` : ''}
+                        <span class="badge bg-primary ms-2">${product.quantity} ${product.unit}</span>
+                        ${product.photo ? '<span class="badge bg-success ms-1">已拍照</span>' : ''}
+                    </div>
+                    <div>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="takePhoto(${index})">
+                            <i class="fa fa-camera"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="removeProduct(${index})">
+                            <i class="fa fa-trash"></i>
+                        </button>
+                    </div>
+                </li>
+            `);
+            list.append(item);
+        });
+    }
+
+    // 拍照
+    function takePhoto(index) {
+        currentPhotoIndex = index;
+        $('#scannerModal').modal('hide');
+
+        const photoModal = new bootstrap.Modal(document.getElementById('photoModal'));
+        photoModal.show();
+
+        // 启动摄像头
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(function(stream) {
+                photoStream = stream;
+                const video = document.getElementById('photoVideo');
+                video.srcObject = stream;
+            })
+            .catch(function(err) {
+                console.error('无法访问摄像头:', err);
+                alert('无法访问摄像头，请检查权限设置');
+            });
+
+        // 关闭模态框时停止摄像头
+        $('#photoModal').on('hidden.bs.modal', function() {
+            if (photoStream) {
+                photoStream.getTracks().forEach(track => track.stop());
+            }
+            // 重新打开扫码模态框
+            openScanner();
+        });
+    }
+
+    // 捕获照片
+    function capturePhoto() {
+        const video = document.getElementById('photoVideo');
+        const canvas = document.getElementById('photoCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 绘制视频帧到画布
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // 转换为base64
+        const photoData = canvas.toDataURL('image/jpeg', 0.8);
+
+        // 保存到产品信息
+        scannedProducts[currentPhotoIndex].photo = photoData;
+
+        // 关闭拍照模态框
+        $('#photoModal').modal('hide');
+    }
+
+    // 移除产品
+    function removeProduct(index) {
+        scannedProducts.splice(index, 1);
+        updateScannedList();
+    }
+
+    // 确认出库
+    function confirmOutbound() {
+        if (scannedProducts.length === 0) {
+            alert('请先扫描产品');
+            return;
+        }
+
+        // 检查所有产品是否都有照片
+        const missingPhoto = scannedProducts.some(p => !p.photo);
+        if (missingPhoto) {
+            if (!confirm('部分产品未拍照，是否继续出库？')) {
+                return;
+            }
+        }
+
+        // 批量提交出库
+        let successCount = 0;
+        let failCount = 0;
+
+        const promises = scannedProducts.map(product => {
+            return $.post('/api/stock/out', {
+                product_id: product.id,
+                quantity: product.quantity,
+                operator: '手机扫码',
+                waybill_number: currentWaybill,
+                photo_data: product.photo
+            }).then(res => {
+                if (res.success) {
+                    successCount++;
+                } else {
+                    failCount++;
+                    console.error(`${product.name} 出库失败:`, res.message);
+                }
+            }).catch(err => {
+                failCount++;
+                console.error(`${product.name} 出库错误:`, err);
+            });
+        });
+
+        Promise.all(promises).then(() => {
+            alert(`出库完成：成功 ${successCount} 个，失败 ${failCount} 个`);
+            $('#scannerModal').modal('hide');
+            location.reload();
         });
     }
 </script>

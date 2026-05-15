@@ -1,14 +1,17 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
+import base64
+from werkzeug.utils import secure_filename
 
 # 初始化Flask应用
 app = Flask(__name__)
 app.config.from_pyfile('config.py')
 
-# 确保instance目录存在
+# 确保instance和uploads目录存在
 os.makedirs(app.instance_path, exist_ok=True)
+os.makedirs(os.path.join(app.static_folder, 'uploads'), exist_ok=True)
 
 # 初始化数据库
 db = SQLAlchemy(app)
@@ -35,6 +38,8 @@ class StockRecord(db.Model):
     quantity = db.Column(db.Integer, nullable=False, comment='数量')
     operator = db.Column(db.String(50), comment='操作人')
     remark = db.Column(db.String(200), comment='备注')
+    waybill_number = db.Column(db.String(100), comment='运单号（仅出库）')
+    photo_path = db.Column(db.String(200), comment='产品照片路径（仅出库）')
     create_time = db.Column(db.DateTime, default=datetime.now, comment='操作时间')
 
     # 关联产品表
@@ -54,6 +59,17 @@ def index():
     # 获取所有产品用于库存展示
     products = Product.query.order_by(Product.create_time.desc()).all()
     return render_template('index.html', products=products)
+
+
+# 出入库记录页面
+@app.route('/records/<record_type>')
+def records(record_type):
+    if record_type not in ['in', 'out']:
+        return redirect(url_for('index'))
+
+    records = StockRecord.query.filter_by(type=record_type).order_by(StockRecord.create_time.desc()).all()
+    title = '入库记录' if record_type == 'in' else '出库记录'
+    return render_template('records.html', records=records, record_type=record_type, title=title)
 
 
 # ------------------- API接口（扫码核心） -------------------
@@ -115,12 +131,30 @@ def stock_out():
         quantity = int(request.form.get('quantity', 1))
         operator = request.form.get('operator', '')
         remark = request.form.get('remark', '')
+        waybill_number = request.form.get('waybill_number', '')
+        photo_data = request.form.get('photo_data', '')
 
         product = Product.query.get_or_404(product_id)
 
         # 检查库存
         if product.stock < quantity:
             return jsonify({'success': False, 'message': f'库存不足！当前库存：{product.stock} {product.unit}'})
+
+        # 保存照片（如果有）
+        photo_path = ''
+        if photo_data:
+            # 解码base64图片
+            header, encoded = photo_data.split(',', 1)
+            data = base64.b64decode(encoded)
+
+            # 生成文件名
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            filename = f'out_{product.barcode}_{timestamp}.jpg'
+            photo_path = os.path.join('uploads', filename)
+
+            # 保存文件
+            with open(os.path.join(app.static_folder, photo_path), 'wb') as f:
+                f.write(data)
 
         # 更新库存
         product.stock -= quantity
@@ -131,7 +165,9 @@ def stock_out():
             type='out',
             quantity=quantity,
             operator=operator,
-            remark=remark
+            remark=remark,
+            waybill_number=waybill_number,
+            photo_path=photo_path
         )
 
         db.session.add(record)
@@ -175,5 +211,4 @@ def add_product():
 # ------------------- 启动应用 -------------------
 if __name__ == '__main__':
     # 仅本地开发时使用，生产环境用Gunicorn启动
-    app.run(host='127.0.0.1', port=5000, debug=False)
-
+    app.run(host='0.0.0.0', port=5000, debug=True)
