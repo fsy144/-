@@ -43,6 +43,24 @@
     </div>
 </div>
 
+<!-- 库存查询 -->
+<div class="card mt-3">
+    <div class="card-header">
+        <i class="fa fa-search"></i> 库存查询
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <input type="text" id="searchInput" class="form-control" placeholder="输入产品条码或批次号">
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-primary w-100" onclick="searchInventory()">查询</button>
+            </div>
+        </div>
+        <div id="searchResults" class="mt-3 table-responsive"></div>
+    </div>
+</div>
+
 <div class="card mt-3">
     <div class="card-header">
         <i class="fa fa-list"></i> 当前库存（按批次）
@@ -104,5 +122,32 @@
             });
         });
     });
+
+    // 库存查询：支持条码或批次号
+    function searchInventory() {
+        const keyword = $('#searchInput').val().trim();
+        if (!keyword) {
+            alert('请输入产品条码或批次号');
+            return;
+        }
+        $.get('/api/inventory/search', { keyword: keyword }, function(res) {
+            if (res.success) {
+                if (res.data.length === 0) {
+                    $('#searchResults').html('<div class="alert alert-info">未找到相关库存</div>');
+                    return;
+                }
+                let html = '<table class="table table-bordered table-sm"><thead><tr><th>产品名称</th><th>条码</th><th>批次号</th><th>库存数量</th><th>单位</th></tr></thead><tbody>';
+                res.data.forEach(item => {
+                    html += `<tr><td>${item.product_name}</td><td>${item.barcode}</td><td>${item.batch_no}</td><td>${item.stock}</td><td>${item.unit}</td></tr>`;
+                });
+                html += '</tbody></table>';
+                $('#searchResults').html(html);
+            } else {
+                $('#searchResults').html(`<div class="alert alert-warning">${res.message}</div>`);
+            }
+        }).fail(function() {
+            $('#searchResults').html('<div class="alert alert-danger">查询失败，请稍后再试</div>');
+        });
+    }
 </script>
 {% endblock %}

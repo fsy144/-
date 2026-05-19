@@ -170,6 +170,85 @@ def get_product(barcode):
         })
     return jsonify({'success': False, 'message': '未找到该条码对应的产品'})
 
+@app.route('/api/product/<int:product_id>/batches')
+def get_product_batches(product_id):
+    product = Product.query.get_or_404(product_id)
+    from sqlalchemy import distinct
+    batches = db.session.query(distinct(StockRecord.batch_no)).filter(
+        StockRecord.product_id == product_id,
+        StockRecord.batch_no.isnot(None),
+        StockRecord.batch_no != ''
+    ).all()
+    batch_list = [b[0] for b in batches]
+    return jsonify({'success': True, 'batches': batch_list})
+
+# 新增库存查询接口
+@app.route('/api/inventory/search')
+def search_inventory():
+    keyword = request.args.get('keyword', '').strip()
+    if not keyword:
+        return jsonify({'success': False, 'message': '请输入产品条码或批次号'})
+
+    from sqlalchemy import case, func
+
+    # 先按条码匹配
+    product = Product.query.filter_by(barcode=keyword).first()
+    if product:
+        batch_stocks = db.session.query(
+            StockRecord.batch_no,
+            func.sum(case(
+                (StockRecord.type.in_(['in', 'adjust_in']), StockRecord.quantity),
+                (StockRecord.type.in_(['out', 'adjust_out']), -StockRecord.quantity),
+                else_=0
+            )).label('net_stock')
+        ).filter(
+            StockRecord.product_id == product.id,
+            StockRecord.batch_no.isnot(None),
+            StockRecord.batch_no != ''
+        ).group_by(StockRecord.batch_no).all()
+
+        data = []
+        for batch, stock in batch_stocks:
+            if stock != 0:
+                data.append({
+                    'product_name': product.name,
+                    'barcode': product.barcode,
+                    'batch_no': batch,
+                    'stock': stock,
+                    'unit': product.unit
+                })
+        return jsonify({'success': True, 'data': data})
+
+    # 按批次号匹配
+    batch_stocks = db.session.query(
+        StockRecord.product_id,
+        StockRecord.batch_no,
+        func.sum(case(
+            (StockRecord.type.in_(['in', 'adjust_in']), StockRecord.quantity),
+            (StockRecord.type.in_(['out', 'adjust_out']), -StockRecord.quantity),
+            else_=0
+        )).label('net_stock')
+    ).filter(
+        StockRecord.batch_no == keyword
+    ).group_by(StockRecord.product_id, StockRecord.batch_no).all()
+
+    if not batch_stocks:
+        return jsonify({'success': False, 'message': '未找到匹配的库存信息'})
+
+    data = []
+    for pid, batch, stock in batch_stocks:
+        if stock != 0:
+            prod = Product.query.get(pid)
+            if prod:
+                data.append({
+                    'product_name': prod.name,
+                    'barcode': prod.barcode,
+                    'batch_no': batch,
+                    'stock': stock,
+                    'unit': prod.unit
+                })
+    return jsonify({'success': True, 'data': data})
+
 @app.route('/api/stock/in', methods=['POST'])
 def stock_in():
     try:
