@@ -1,11 +1,13 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file, session
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, date
+from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import base64
 import io
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
+from functools import wraps
 
 app = Flask(__name__)
 app.config.from_pyfile('config.py')
@@ -15,6 +17,19 @@ os.makedirs(os.path.join(app.static_folder, 'uploads'), exist_ok=True)
 
 db = SQLAlchemy(app)
 
+# ---------- 用户模型 ----------
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+# ---------- 产品模型 ----------
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     barcode = db.Column(db.String(50), unique=True, nullable=False)
@@ -25,6 +40,7 @@ class Product(db.Model):
     create_time = db.Column(db.DateTime, default=datetime.now)
     update_time = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
 
+# ---------- 库存记录模型 ----------
 class StockRecord(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
@@ -48,6 +64,63 @@ with app.app_context():
     db.create_all()
     print("✅ 数据库初始化成功！")
 
+# ---------- 登录装饰器 ----------
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# ---------- 全局登录拦截 ----------
+@app.before_request
+def require_login():
+    allowed_endpoints = ['login', 'register', 'static']
+    if request.endpoint in allowed_endpoints:
+        return
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+# ---------- 认证路由 ----------
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        user = User.query.filter_by(username=username).first()
+        if user and user.check_password(password):
+            session['user_id'] = user.id
+            session['username'] = user.username
+            return redirect(url_for('index'))
+        else:
+            return render_template('login.html', error='用户名或密码错误')
+    return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        if not username or not password:
+            return render_template('register.html', error='用户名和密码不能为空')
+        if User.query.filter_by(username=username).first():
+            return render_template('register.html', error='用户名已存在')
+        user = User(username=username)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        session['user_id'] = user.id
+        session['username'] = user.username
+        return redirect(url_for('index'))
+    return render_template('register.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+# ---------- 工作台（首页） ----------
 @app.route('/')
 def index():
     from sqlalchemy import case, func
@@ -72,6 +145,7 @@ def index():
 
     return render_template('index.html', inventory_rows=inventory_rows)
 
+# ---------- 出入库记录页面 ----------
 @app.route('/records/<record_type>')
 def records(record_type):
     if record_type not in ['in', 'out']:
@@ -85,6 +159,7 @@ def records(record_type):
     title = '入库记录' if record_type == 'in' else '出库记录'
     return render_template('records.html', records=records_list, record_type=record_type, title=title)
 
+# ---------- 下载 Excel ----------
 @app.route('/records/<record_type>/download')
 def download_records(record_type):
     if record_type not in ['in', 'out']:
@@ -150,10 +225,12 @@ def download_records(record_type):
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
 
+# ---------- 库存管理页面 ----------
 @app.route('/inventory')
 def inventory_page():
     return render_template('inventory.html')
 
+# ---------- 产品 API ----------
 @app.route('/api/product/<barcode>')
 def get_product(barcode):
     product = Product.query.filter_by(barcode=barcode).first()
@@ -182,73 +259,82 @@ def get_product_batches(product_id):
     batch_list = [b[0] for b in batches]
     return jsonify({'success': True, 'batches': batch_list})
 
-# 新增库存查询接口
+# ---------- 库存查询 API ----------
 @app.route('/api/inventory/search')
 def search_inventory():
     keyword = request.args.get('keyword', '').strip()
-    if not keyword:
-        return jsonify({'success': False, 'message': '请输入产品条码或批次号'})
-
     from sqlalchemy import case, func
 
-    # 先按条码匹配
-    product = Product.query.filter_by(barcode=keyword).first()
-    if product:
-        batch_stocks = db.session.query(
-            StockRecord.batch_no,
-            func.sum(case(
-                (StockRecord.type.in_(['in', 'adjust_in']), StockRecord.quantity),
-                (StockRecord.type.in_(['out', 'adjust_out']), -StockRecord.quantity),
-                else_=0
-            )).label('net_stock')
-        ).filter(
-            StockRecord.product_id == product.id,
-            StockRecord.batch_no.isnot(None),
-            StockRecord.batch_no != ''
-        ).group_by(StockRecord.batch_no).all()
+    net_stock_expr = func.sum(case(
+        (StockRecord.type.in_(['in', 'adjust_in']), StockRecord.quantity),
+        (StockRecord.type.in_(['out', 'adjust_out']), -StockRecord.quantity),
+        else_=0
+    ))
 
-        data = []
-        for batch, stock in batch_stocks:
-            if stock != 0:
-                data.append({
-                    'product_name': product.name,
-                    'barcode': product.barcode,
-                    'batch_no': batch,
-                    'stock': stock,
-                    'unit': product.unit
-                })
+    if keyword:
+        product = Product.query.filter_by(barcode=keyword).first()
+        if product:
+            batch_stocks = db.session.query(
+                StockRecord.batch_no,
+                net_stock_expr.label('net_stock')
+            ).filter(
+                StockRecord.product_id == product.id,
+                StockRecord.batch_no.isnot(None),
+                StockRecord.batch_no != ''
+            ).group_by(StockRecord.batch_no).having(net_stock_expr != 0).all()
+
+            data = [{
+                'product_name': product.name,
+                'barcode': product.barcode,
+                'batch_no': batch,
+                'stock': stock,
+                'unit': product.unit
+            } for batch, stock in batch_stocks]
+            return jsonify({'success': True, 'data': data})
+        else:
+            batch_stocks = db.session.query(
+                StockRecord.product_id,
+                StockRecord.batch_no,
+                net_stock_expr.label('net_stock')
+            ).filter(
+                StockRecord.batch_no == keyword
+            ).group_by(StockRecord.product_id, StockRecord.batch_no).having(net_stock_expr != 0).all()
+
+            data = []
+            for pid, batch, stock in batch_stocks:
+                prod = Product.query.get(pid)
+                if prod:
+                    data.append({
+                        'product_name': prod.name,
+                        'barcode': prod.barcode,
+                        'batch_no': batch,
+                        'stock': stock,
+                        'unit': prod.unit
+                    })
+            return jsonify({'success': True, 'data': data})
+    else:
+        results = db.session.query(
+            Product.id,
+            Product.barcode,
+            Product.name,
+            Product.unit,
+            StockRecord.batch_no,
+            net_stock_expr.label('net_stock')
+        ).join(StockRecord, StockRecord.product_id == Product.id)\
+         .filter(StockRecord.batch_no.isnot(None), StockRecord.batch_no != '')\
+         .group_by(Product.id, Product.barcode, Product.name, Product.unit, StockRecord.batch_no)\
+         .having(net_stock_expr != 0).all()
+
+        data = [{
+            'product_name': name,
+            'barcode': barcode,
+            'batch_no': batch,
+            'stock': stock,
+            'unit': unit
+        } for pid, barcode, name, unit, batch, stock in results]
         return jsonify({'success': True, 'data': data})
 
-    # 按批次号匹配
-    batch_stocks = db.session.query(
-        StockRecord.product_id,
-        StockRecord.batch_no,
-        func.sum(case(
-            (StockRecord.type.in_(['in', 'adjust_in']), StockRecord.quantity),
-            (StockRecord.type.in_(['out', 'adjust_out']), -StockRecord.quantity),
-            else_=0
-        )).label('net_stock')
-    ).filter(
-        StockRecord.batch_no == keyword
-    ).group_by(StockRecord.product_id, StockRecord.batch_no).all()
-
-    if not batch_stocks:
-        return jsonify({'success': False, 'message': '未找到匹配的库存信息'})
-
-    data = []
-    for pid, batch, stock in batch_stocks:
-        if stock != 0:
-            prod = Product.query.get(pid)
-            if prod:
-                data.append({
-                    'product_name': prod.name,
-                    'barcode': prod.barcode,
-                    'batch_no': batch,
-                    'stock': stock,
-                    'unit': prod.unit
-                })
-    return jsonify({'success': True, 'data': data})
-
+# ---------- 入库 API ----------
 @app.route('/api/stock/in', methods=['POST'])
 def stock_in():
     try:
@@ -285,6 +371,7 @@ def stock_in():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'入库失败：{str(e)}'})
 
+# ---------- 单条出库 API ----------
 @app.route('/api/stock/out', methods=['POST'])
 def stock_out():
     try:
@@ -338,6 +425,7 @@ def stock_out():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'出库失败：{str(e)}'})
 
+# ---------- 批量出库 API ----------
 @app.route('/api/stock/out_batch', methods=['POST'])
 def stock_out_batch():
     try:
@@ -351,7 +439,6 @@ def stock_out_batch():
         if not items:
             return jsonify({'success': False, 'message': '没有产品'})
 
-        # 主记录
         first_item = items[0]
         product = Product.query.get_or_404(first_item['product_id'])
         if product.stock < first_item.get('quantity', 1):
@@ -377,15 +464,14 @@ def stock_out_batch():
             waybill_number=waybill,
             photo_path=photo_path,
             batch_no=first_item.get('batch_no', ''),
-            production_date=datetime.strptime(first_item['production_date'], '%Y-%m-%d').date() if first_item.get('production_date') else None,
-            expiry_date=datetime.strptime(first_item['expiry_date'], '%Y-%m-%d').date() if first_item.get('expiry_date') else None,
+            production_date=datetime.strptime(first_item.get('production_date'), '%Y-%m-%d').date() if first_item.get('production_date') else None,
+            expiry_date=datetime.strptime(first_item.get('expiry_date'), '%Y-%m-%d').date() if first_item.get('expiry_date') else None,
             platform=platform
         )
         db.session.add(main_record)
         product.stock -= first_item.get('quantity', 1)
         db.session.flush()
 
-        # 子记录
         for item in items[1:]:
             prod = Product.query.get_or_404(item['product_id'])
             if prod.stock < item.get('quantity', 1):
@@ -401,8 +487,8 @@ def stock_out_batch():
                 waybill_number=waybill,
                 parent_id=main_record.id,
                 batch_no=item.get('batch_no', ''),
-                production_date=datetime.strptime(item['production_date'], '%Y-%m-%d').date() if item.get('production_date') else None,
-                expiry_date=datetime.strptime(item['expiry_date'], '%Y-%m-%d').date() if item.get('expiry_date') else None,
+                production_date=datetime.strptime(item.get('production_date'), '%Y-%m-%d').date() if item.get('production_date') else None,
+                expiry_date=datetime.strptime(item.get('expiry_date'), '%Y-%m-%d').date() if item.get('expiry_date') else None,
                 platform=platform
             )
             db.session.add(sub_record)
@@ -414,6 +500,7 @@ def stock_out_batch():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'批量出库失败：{str(e)}'})
 
+# ---------- 库存调整 API ----------
 @app.route('/api/inventory/adjust', methods=['POST'])
 def adjust_inventory():
     try:
@@ -430,6 +517,8 @@ def adjust_inventory():
             return jsonify({'success': False, 'message': '操作类型错误'})
         if quantity <= 0:
             return jsonify({'success': False, 'message': '数量必须大于0'})
+        if not batch_no:
+            return jsonify({'success': False, 'message': '批次号不能为空'})
 
         production_date = datetime.strptime(production_date_str, '%Y-%m-%d').date() if production_date_str else None
         expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date() if expiry_date_str else None

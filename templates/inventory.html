@@ -10,30 +10,41 @@
     <div class="card-body">
         <form id="adjustForm" class="row g-3">
             <div class="col-md-3">
-                <input type="text" id="adjustBarcode" class="form-control" placeholder="产品条码" required>
+                <label class="form-label">产品条码/批次号</label>
+                <div class="input-group">
+                    <input type="text" id="adjustBarcode" class="form-control" placeholder="输入条码或批次号" required>
+                    <button class="btn btn-outline-info" type="button" onclick="searchByAdjustInput()">查询库存</button>
+                </div>
             </div>
             <div class="col-md-2">
+                <label class="form-label">操作类型</label>
                 <select id="adjustType" class="form-select">
                     <option value="in">增加库存</option>
                     <option value="out">减少库存</option>
                 </select>
             </div>
             <div class="col-md-2">
+                <label class="form-label">数量 *</label>
                 <input type="number" id="adjustQuantity" class="form-control" placeholder="数量" min="1" required>
             </div>
             <div class="col-md-2">
-                <input type="text" id="adjustBatch" class="form-control" placeholder="批次号">
+                <label class="form-label">批次号 *</label>
+                <input type="text" id="adjustBatch" class="form-control" placeholder="必填" required>
             </div>
             <div class="col-md-3">
+                <label class="form-label">操作人</label>
                 <input type="text" id="adjustOperator" class="form-control" placeholder="操作人" value="管理员">
             </div>
             <div class="col-md-4">
-                <input type="date" id="adjustProductionDate" class="form-control" placeholder="生产日期">
+                <label class="form-label">生产日期</label>
+                <input type="date" id="adjustProductionDate" class="form-control">
             </div>
             <div class="col-md-4">
-                <input type="date" id="adjustExpiryDate" class="form-control" placeholder="到期日期">
+                <label class="form-label">到期日期</label>
+                <input type="date" id="adjustExpiryDate" class="form-control">
             </div>
             <div class="col-md-4">
+                <label class="form-label">备注</label>
                 <input type="text" id="adjustRemark" class="form-control" placeholder="备注">
             </div>
             <div class="col-12">
@@ -43,42 +54,79 @@
     </div>
 </div>
 
-<!-- 库存查询 -->
-<div class="card mt-3">
-    <div class="card-header">
-        <i class="fa fa-search"></i> 库存查询
-    </div>
-    <div class="card-body">
-        <div class="row g-3">
-            <div class="col-md-4">
-                <input type="text" id="searchInput" class="form-control" placeholder="输入产品条码或批次号">
-            </div>
-            <div class="col-md-2">
-                <button class="btn btn-primary w-100" onclick="searchInventory()">查询</button>
-            </div>
-        </div>
-        <div id="searchResults" class="mt-3 table-responsive"></div>
-    </div>
-</div>
-
 <div class="card mt-3">
     <div class="card-header">
         <i class="fa fa-list"></i> 当前库存（按批次）
     </div>
-    <div class="card-body" id="inventoryList">
-        <div class="text-center text-muted">调整后请刷新页面查看最新库存</div>
+    <div class="card-body">
+        <div class="table-responsive" id="inventoryTableContainer">
+            <div class="text-center text-muted">加载中...</div>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+    // 页面加载时自动获取全部库存
+    $(document).ready(function() {
+        loadAllInventory();
+    });
+
+    // 加载全部库存
+    function loadAllInventory() {
+        $.get('/api/inventory/search', { keyword: '' }, function(res) {
+            renderInventoryTable(res);
+        }).fail(function() {
+            $('#inventoryTableContainer').html('<div class="alert alert-danger">加载库存失败，请稍后重试</div>');
+        });
+    }
+
+    // 根据输入框内容查询
+    function searchByAdjustInput() {
+        const keyword = $('#adjustBarcode').val().trim();
+        if (!keyword) {
+            alert('请输入产品条码或批次号');
+            return;
+        }
+        $.get('/api/inventory/search', { keyword: keyword }, function(res) {
+            renderInventoryTable(res);
+        }).fail(function() {
+            $('#inventoryTableContainer').html('<div class="alert alert-danger">查询失败</div>');
+        });
+    }
+
+    // 渲染库存表格
+    function renderInventoryTable(res) {
+        if (res.success) {
+            if (res.data.length === 0) {
+                $('#inventoryTableContainer').html('<div class="alert alert-info">暂无库存数据</div>');
+                return;
+            }
+            let html = '<table class="table table-bordered table-sm"><thead><tr><th>产品名称</th><th>条码</th><th>批次号</th><th>库存数量</th><th>单位</th></tr></thead><tbody>';
+            res.data.forEach(item => {
+                html += `<tr><td>${item.product_name}</td><td>${item.barcode}</td><td>${item.batch_no}</td><td>${item.stock}</td><td>${item.unit}</td></tr>`;
+            });
+            html += '</tbody></table>';
+            $('#inventoryTableContainer').html(html);
+        } else {
+            $('#inventoryTableContainer').html(`<div class="alert alert-warning">${res.message}</div>`);
+        }
+    }
+
+    // 调整库存提交
     $('#adjustSubmit').on('click', function() {
         const barcode = $('#adjustBarcode').val().trim();
+        const batch = $('#adjustBatch').val().trim();
         if (!barcode) {
             alert('请输入产品条码');
             return;
         }
+        if (!batch) {
+            alert('批次号不能为空');
+            return;
+        }
+        // 根据条码查找产品ID
         $.get(`/api/product/${barcode}`, function(data) {
             if (!data.success) {
                 alert('未找到该条码对应的产品，请先在首页添加');
@@ -87,7 +135,6 @@
             const productId = data.data.id;
             const adjustType = $('#adjustType').val();
             const quantity = $('#adjustQuantity').val();
-            const batch = $('#adjustBatch').val();
             const operator = $('#adjustOperator').val() || '管理员';
             const productionDate = $('#adjustProductionDate').val();
             const expiryDate = $('#adjustExpiryDate').val();
@@ -110,44 +157,19 @@
             }, function(res) {
                 if (res.success) {
                     alert(res.message);
-                    $('#adjustBarcode').val('');
+                    // 清空表单部分字段
                     $('#adjustQuantity').val('');
                     $('#adjustBatch').val('');
                     $('#adjustProductionDate').val('');
                     $('#adjustExpiryDate').val('');
                     $('#adjustRemark').val('');
+                    // 重新加载库存
+                    loadAllInventory();
                 } else {
                     alert(res.message);
                 }
             });
         });
     });
-
-    // 库存查询：支持条码或批次号
-    function searchInventory() {
-        const keyword = $('#searchInput').val().trim();
-        if (!keyword) {
-            alert('请输入产品条码或批次号');
-            return;
-        }
-        $.get('/api/inventory/search', { keyword: keyword }, function(res) {
-            if (res.success) {
-                if (res.data.length === 0) {
-                    $('#searchResults').html('<div class="alert alert-info">未找到相关库存</div>');
-                    return;
-                }
-                let html = '<table class="table table-bordered table-sm"><thead><tr><th>产品名称</th><th>条码</th><th>批次号</th><th>库存数量</th><th>单位</th></tr></thead><tbody>';
-                res.data.forEach(item => {
-                    html += `<tr><td>${item.product_name}</td><td>${item.barcode}</td><td>${item.batch_no}</td><td>${item.stock}</td><td>${item.unit}</td></tr>`;
-                });
-                html += '</tbody></table>';
-                $('#searchResults').html(html);
-            } else {
-                $('#searchResults').html(`<div class="alert alert-warning">${res.message}</div>`);
-            }
-        }).fail(function() {
-            $('#searchResults').html('<div class="alert alert-danger">查询失败，请稍后再试</div>');
-        });
-    }
 </script>
 {% endblock %}
