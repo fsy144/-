@@ -243,79 +243,90 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body>
-    <div class="overlay" id="overlay"></div>
+<div class="overlay" id="overlay"></div>
 
-    <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            库存管理系统
-        </div>
-        <ul class="sidebar-menu">
-            <li>
-                <a href="/" class="{% if request.path == '/' %}active{% endif %}">
-                    <i class="fa fa-dashboard"></i> 工作台
-                </a>
-            </li>
-            <li>
-                <a href="/records/in" class="{% if request.path == '/records/in' %}active{% endif %}">
-                    <i class="fa fa-arrow-down"></i> 入库记录
-                </a>
-            </li>
-            <li>
-                <a href="/records/out" class="{% if request.path == '/records/out' %}active{% endif %}">
-                    <i class="fa fa-arrow-up"></i> 出库记录
-                </a>
-            </li>
-            <li>
-                <a href="/inventory" class="{% if request.path == '/inventory' %}active{% endif %}">
-                    <i class="fa fa-cubes"></i> 库存管理
-                </a>
-            </li>
-            <li>
-                <a href="#">
-                    <i class="fa fa-cog"></i> 系统设置
-                </a>
-            </li>
-        </ul>
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        库存管理系统
     </div>
+    <ul class="sidebar-menu">
+        <li>
+            <a href="/" class="{% if request.path == '/' %}active{% endif %}">
+                <i class="fa fa-dashboard"></i> 工作台
+            </a>
+        </li>
+        <li>
+            <a href="/records/in" class="{% if request.path == '/records/in' %}active{% endif %}">
+                <i class="fa fa-arrow-down"></i> 入库记录
+            </a>
+        </li>
+        <li>
+            <a href="/records/out" class="{% if request.path == '/records/out' %}active{% endif %}">
+                <i class="fa fa-arrow-up"></i> 出库记录
+            </a>
+        </li>
+        <li>
+            <a href="/inventory" class="{% if request.path == '/inventory' %}active{% endif %}">
+                <i class="fa fa-cubes"></i> 库存管理
+            </a>
+        </li>
+        <li>
+            <a href="#">
+                <i class="fa fa-cog"></i> 系统设置
+            </a>
+        </li>
+    </ul>
+</div>
 
-    <div class="main-content">
-        <div class="top-navbar">
-            <div class="navbar-left">
+<div class="main-content">
+    <div class="top-navbar">
+        <div class="navbar-left">
                 <span class="menu-toggle" id="menuToggle">
                     <i class="fa fa-bars"></i>
                 </span>
-                <h5 class="mb-0">{% block page_title %}扫码出入库{% endblock %}</h5>
-            </div>
-            <div class="navbar-right">
-                <div class="user-info">
-                    <i class="fa fa-user-circle-o"></i>
-                    <span>管理员</span>
-                </div>
-            </div>
+            <h5 class="mb-0">{% block page_title %}扫码出入库{% endblock %}</h5>
         </div>
-
-        <div class="page-content">
-            {% block content %}{% endblock %}
+        <div class="navbar-right">
+            <div class="dropdown">
+                <a class="dropdown-toggle text-decoration-none user-info" href="#" role="button" id="userMenu"
+                   data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fa fa-user-circle-o"></i>
+                    <span>{{ session.get('username', '管理员') }}</span>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userMenu">
+                    <li><span class="dropdown-item-text text-muted">{{ session.get('username', '') }}</span></li>
+                    <li>
+                        <hr class="dropdown-divider">
+                    </li>
+                    <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="fa fa-sign-out"></i> 退出登录</a>
+                    </li>
+                </ul>
+            </div>
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+    <div class="page-content">
+        {% block content %}{% endblock %}
+    </div>
+</div>
 
-    <script>
-        $(document).ready(function() {
-            $('#menuToggle').on('click', function() {
-                $('#sidebar').toggleClass('show');
-                $('#overlay').toggleClass('show');
-            });
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
 
-            $('#overlay').on('click', function() {
-                $('#sidebar').removeClass('show');
-                $('#overlay').removeClass('show');
-            });
+<script>
+    $(document).ready(function() {
+        $('#menuToggle').on('click', function() {
+            $('#sidebar').toggleClass('show');
+            $('#overlay').toggleClass('show');
         });
-    </script>
 
-    {% block extra_js %}{% endblock %}
+        $('#overlay').on('click', function() {
+            $('#sidebar').removeClass('show');
+            $('#overlay').removeClass('show');
+        });
+    });
+</script>
+
+{% block extra_js %}{% endblock %}
 </body>
 </html>
