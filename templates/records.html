@@ -7,12 +7,9 @@
     <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="fa fa-list"></i> {{ title }}</span>
         <div>
-            <a href="/records/in" class="btn btn-sm {% if record_type == 'in' %}btn-primary{% else %}btn-outline-primary{% endif %}">
-                入库记录
-            </a>
-            <a href="/records/out" class="btn btn-sm {% if record_type == 'out' %}btn-warning{% else %}btn-outline-warning{% endif %} ms-1">
-                出库记录
-            </a>
+            <a href="/records/in" class="btn btn-sm {% if record_type == 'in' %}btn-primary{% else %}btn-outline-primary{% endif %}">入库记录</a>
+            <a href="/records/out" class="btn btn-sm {% if record_type == 'out' %}btn-warning{% else %}btn-outline-warning{% endif %} ms-1">出库记录</a>
+            <a href="/records/{{ record_type }}/download" class="btn btn-sm btn-success ms-1"><i class="fa fa-download"></i> 导出Excel</a>
         </div>
     </div>
     <div class="card-body">
@@ -25,13 +22,17 @@
                         <th>产品名称</th>
                         <th>规格</th>
                         <th>数量</th>
-                        <th>操作人</th>
                         {% if record_type == 'out' %}
                         <th>运单号</th>
-                        <th>产品照片</th>
                         {% endif %}
+                        <th>批次号</th>
+                        <th>生产日期</th>
+                        <th>到期日期</th>
+                        <th>平台</th>
+                        <th>操作人</th>
                         <th>备注</th>
                         {% if record_type == 'out' %}
+                        <th>产品照片</th>
                         <th>详情</th>
                         {% endif %}
                     </tr>
@@ -44,9 +45,16 @@
                         <td>{{ record.product.name }}</td>
                         <td>{{ record.product.spec or '-' }}</td>
                         <td>{{ record.quantity }} {{ record.product.unit }}</td>
-                        <td>{{ record.operator or '-' }}</td>
                         {% if record_type == 'out' %}
                         <td>{{ record.waybill_number or '-' }}</td>
+                        {% endif %}
+                        <td>{{ record.batch_no or '-' }}</td>
+                        <td>{{ record.production_date.strftime('%Y-%m-%d') if record.production_date else '-' }}</td>
+                        <td>{{ record.expiry_date.strftime('%Y-%m-%d') if record.expiry_date else '-' }}</td>
+                        <td>{{ record.platform or '-' }}</td>
+                        <td>{{ record.operator or '-' }}</td>
+                        <td>{{ record.remark or '-' }}</td>
+                        {% if record_type == 'out' %}
                         <td>
                             {% if record.photo_path %}
                             <a href="{{ url_for('static', filename=record.photo_path) }}" target="_blank">
@@ -56,9 +64,6 @@
                             -
                             {% endif %}
                         </td>
-                        {% endif %}
-                        <td>{{ record.remark or '-' }}</td>
-                        {% if record_type == 'out' %}
                         <td>
                             {% if record.sub_records %}
                             <button class="btn btn-sm btn-outline-info" type="button" data-bs-toggle="collapse" data-bs-target="#sub-{{ record.id }}">
@@ -72,7 +77,7 @@
                     </tr>
                     {% if record_type == 'out' and record.sub_records %}
                     <tr class="collapse" id="sub-{{ record.id }}">
-                        <td colspan="10">
+                        <td colspan="12">
                             <table class="table table-sm mb-0">
                                 <thead>
                                     <tr>
@@ -80,6 +85,9 @@
                                         <th>产品名称</th>
                                         <th>规格</th>
                                         <th>数量</th>
+                                        <th>批次号</th>
+                                        <th>生产日期</th>
+                                        <th>到期日期</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -89,6 +97,9 @@
                                         <td>{{ sub.product.name }}</td>
                                         <td>{{ sub.product.spec or '-' }}</td>
                                         <td>{{ sub.quantity }} {{ sub.product.unit }}</td>
+                                        <td>{{ sub.batch_no or '-' }}</td>
+                                        <td>{{ sub.production_date.strftime('%Y-%m-%d') if sub.production_date else '-' }}</td>
+                                        <td>{{ sub.expiry_date.strftime('%Y-%m-%d') if sub.expiry_date else '-' }}</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -98,7 +109,7 @@
                     {% endif %}
                     {% else %}
                     <tr>
-                        <td colspan="10" class="text-center text-muted">暂无记录</td>
+                        <td colspan="12" class="text-center text-muted">暂无记录</td>
                     </tr>
                     {% endfor %}
                 </tbody>

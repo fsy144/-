@@ -36,7 +36,7 @@
             <form id="operationForm" class="row g-3">
                 <input type="hidden" id="productId">
                 <div class="col-md-2">
-                    <select id="operationType" class="form-select">
+                    <select id="operationType" class="form-select" onchange="toggleFields()">
                         <option value="in">入库</option>
                         <option value="out">出库</option>
                     </select>
@@ -47,8 +47,30 @@
                 <div class="col-md-2">
                     <input type="text" id="operator" class="form-control" placeholder="操作人">
                 </div>
+                <div class="col-md-2">
+                    <input type="text" id="batch_no" class="form-control" placeholder="批次号">
+                </div>
+                <div class="col-md-2">
+                    <input type="date" id="production_date" class="form-control" placeholder="生产日期">
+                </div>
+                <div class="col-md-2">
+                    <input type="date" id="expiry_date" class="form-control" placeholder="到期日期">
+                </div>
+                <div class="col-md-2" id="platformField">
+                    <select id="platformSelect" class="form-select" onchange="handlePlatformSelect()">
+                        <option value="红书">红书</option>
+                        <option value="抖音">抖音</option>
+                        <option value="京东">京东</option>
+                        <option value="天猫">天猫</option>
+                        <option value="other">其它</option>
+                    </select>
+                    <input type="text" id="platformManual" class="form-control mt-1 d-none" placeholder="请输入平台">
+                </div>
                 <div class="col-md-3">
-                    <input type="text" id="remark" class="form-control" placeholder="备注（可选）">
+                    <select id="remarkSelect" class="form-select" onchange="handleRemarkSelect()">
+                        <!-- 选项由JS动态生成 -->
+                    </select>
+                    <input type="text" id="remarkManual" class="form-control mt-1 d-none" placeholder="请输入备注">
                 </div>
                 <div class="col-md-3">
                     <button type="button" id="submitBtn" class="btn btn-primary w-100">确认操作</button>
@@ -80,7 +102,7 @@
     </div>
 </div>
 
-<!-- 库存列表卡片 -->
+<!-- 库存列表卡片（按批次显示） -->
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="fa fa-list"></i> 当前库存</span>
@@ -94,17 +116,19 @@
                         <th>产品名称</th>
                         <th>规格</th>
                         <th>单位</th>
+                        <th>批次号</th>
                         <th>库存数量</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for product in products %}
+                    {% for row in inventory_rows %}
                     <tr>
-                        <td>{{ product.barcode }}</td>
-                        <td>{{ product.name }}</td>
-                        <td>{{ product.spec or '-' }}</td>
-                        <td>{{ product.unit }}</td>
-                        <td>{{ product.stock }}</td>
+                        <td>{{ row.barcode }}</td>
+                        <td>{{ row.name }}</td>
+                        <td>{{ row.spec or '-' }}</td>
+                        <td>{{ row.unit }}</td>
+                        <td>{{ row.batch_no or '-' }}</td>
+                        <td>{{ row.batch_stock }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -170,7 +194,7 @@
     </div>
 </div>
 
-<!-- 手机扫码模态框（扫描产品） -->
+<!-- 手机扫码模态框 -->
 <div class="modal fade" id="scannerModal" tabindex="-1" aria-labelledby="scannerModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
@@ -185,7 +209,6 @@
                 <video id="scannerVideo" width="100%" autoplay playsinline></video>
                 <div class="text-center mt-2 text-muted">请将条码对准摄像头</div>
 
-                <!-- 出库模式下显示已扫描产品列表 -->
                 <div id="outboundList" class="d-none mt-3">
                     <h6>已扫描产品：</h6>
                     <ul id="scannedProducts" class="list-group"></ul>
@@ -198,31 +221,45 @@
     </div>
 </div>
 
-<!-- 产品确认拍照模态框（仅第一个产品弹出） -->
-<div class="modal fade" id="productConfirmModal" tabindex="-1" aria-labelledby="productConfirmLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+<!-- 出库确认备注与平台模态框 -->
+<div class="modal fade" id="confirmOutboundModal" tabindex="-1" aria-labelledby="confirmOutboundModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="productConfirmLabel">确认产品并拍照（母记录）</h5>
+                <h5 class="modal-title" id="confirmOutboundModalLabel">确认出库</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div id="confirmProductInfo">
-                    <h6 id="confirmProductName">产品名称</h6>
-                    <p id="confirmProductSpec" class="text-muted"></p>
-                </div>
+                <h6>本次出库产品清单：</h6>
+                <div id="confirmProductList" class="mb-3"></div>
                 <hr>
-                <div class="d-grid gap-2">
-                    <button class="btn btn-primary" onclick="startTakePhoto()">
-                        <i class="fa fa-camera"></i> 点击拍照
-                    </button>
+                <div class="mb-3">
+                    <label class="form-label">出库平台</label>
+                    <select id="outboundPlatformSelect" class="form-select" onchange="handleBatchPlatformSelect()">
+                        <option value="红书">红书</option>
+                        <option value="抖音">抖音</option>
+                        <option value="京东">京东</option>
+                        <option value="天猫">天猫</option>
+                        <option value="other">其它</option>
+                    </select>
+                    <input type="text" id="outboundPlatformManual" class="form-control mt-1 d-none" placeholder="请输入平台">
                 </div>
-                <div id="confirmCameraArea" class="mt-2 d-none">
-                    <video id="confirmPhotoVideo" width="100%" autoplay playsinline></video>
-                    <div class="d-grid mt-2">
-                        <button class="btn btn-success" onclick="captureConfirmPhoto()">拍摄</button>
-                    </div>
+                <div class="mb-3">
+                    <label for="outboundRemark" class="form-label">出库备注</label>
+                    <select id="outboundRemarkSelect" class="form-select" onchange="handleBatchRemarkSelect()">
+                        <option value="样品">样品</option>
+                        <option value="奖品">奖品</option>
+                        <option value="满赠">满赠</option>
+                        <option value="换货">换货</option>
+                        <option value="内购">内购</option>
+                        <option value="other">其它</option>
+                    </select>
+                    <input type="text" id="outboundRemarkManual" class="form-control mt-1 d-none" placeholder="请输入备注">
                 </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitOutboundWithRemark()">确认提交</button>
             </div>
         </div>
     </div>
@@ -230,7 +267,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<!-- ZXing条码扫描库 -->
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.0/umd/index.min.js"></script>
 
 <script>
@@ -238,11 +274,8 @@
     let currentWaybill = '';
     let scannedProducts = [];
     let codeReader;
-    let pendingProduct = null;
-    let confirmPhotoStream = null;
     let waybillCodeReader = null;
 
-    // 扫码枪支持：监听回车事件
     $('#barcodeInput').on('keypress', function(e) {
         if (e.key === 'Enter') {
             e.preventDefault();
@@ -250,7 +283,6 @@
         }
     });
 
-    // 查询产品
     function searchProduct() {
         const barcode = $('#barcodeInput').val().trim();
         if (!barcode) return;
@@ -265,6 +297,7 @@
                 $('#addProductForm').addClass('d-none');
                 $('#barcodeInput').val('');
                 $('#barcodeInput').focus();
+                toggleFields();
             } else {
                 $('#newBarcode').val(barcode);
                 $('#addProductForm').removeClass('d-none');
@@ -274,13 +307,84 @@
         });
     }
 
-    // 提交出入库操作（手动表单）
+    function toggleFields() {
+        const type = $('#operationType').val();
+        const remarkSelect = $('#remarkSelect');
+        remarkSelect.empty();
+        if (type === 'in') {
+            remarkSelect.append('<option value="退货">退货</option>');
+            remarkSelect.append('<option value="样品">样品</option>');
+            remarkSelect.append('<option value="other">其他</option>');
+            $('#platformField').show();
+        } else {
+            // 出库备注：样品、奖品、满赠、换货、内购、其它
+            remarkSelect.append('<option value="样品">样品</option>');
+            remarkSelect.append('<option value="奖品">奖品</option>');
+            remarkSelect.append('<option value="满赠">满赠</option>');
+            remarkSelect.append('<option value="换货">换货</option>');
+            remarkSelect.append('<option value="内购">内购</option>');
+            remarkSelect.append('<option value="other">其它</option>');
+            $('#platformField').show();
+        }
+        $('#remarkManual').addClass('d-none').val('');
+        $('#platformSelect').val('红书');
+        $('#platformManual').addClass('d-none').val('');
+    }
+
+    function handleRemarkSelect() {
+        const val = $('#remarkSelect').val();
+        if (val === 'other') {
+            $('#remarkManual').removeClass('d-none').focus();
+        } else {
+            $('#remarkManual').addClass('d-none').val('');
+        }
+    }
+
+    function handlePlatformSelect() {
+        const val = $('#platformSelect').val();
+        if (val === 'other') {
+            $('#platformManual').removeClass('d-none').focus();
+        } else {
+            $('#platformManual').addClass('d-none').val('');
+        }
+    }
+
+    function handleBatchRemarkSelect() {
+        const val = $('#outboundRemarkSelect').val();
+        if (val === 'other') {
+            $('#outboundRemarkManual').removeClass('d-none').focus();
+        } else {
+            $('#outboundRemarkManual').addClass('d-none').val('');
+        }
+    }
+
+    function handleBatchPlatformSelect() {
+        const val = $('#outboundPlatformSelect').val();
+        if (val === 'other') {
+            $('#outboundPlatformManual').removeClass('d-none').focus();
+        } else {
+            $('#outboundPlatformManual').addClass('d-none').val('');
+        }
+    }
+
+    // 手动表单提交
     $('#submitBtn').on('click', function() {
         const productId = $('#productId').val();
         const type = $('#operationType').val();
         const quantity = $('#quantity').val();
         const operator = $('#operator').val();
-        const remark = $('#remark').val();
+        const batchNo = $('#batch_no').val();
+        const productionDate = $('#production_date').val();
+        const expiryDate = $('#expiry_date').val();
+        const platformSelect = $('#platformSelect').val();
+        const platformManual = $('#platformManual').val();
+        let platform = platformSelect === 'other' ? (platformManual || '其它') : platformSelect;
+        const remarkSelect = $('#remarkSelect').val();
+        const remarkManual = $('#remarkManual').val();
+        let remark = remarkSelect;
+        if (remarkSelect === 'other') {
+            remark = remarkManual || '其他';
+        }
 
         const url = type === 'in' ? '/api/stock/in' : '/api/stock/out';
 
@@ -288,6 +392,10 @@
             product_id: productId,
             quantity: quantity,
             operator: operator,
+            batch_no: batchNo,
+            production_date: productionDate,
+            expiry_date: expiryDate,
+            platform: platform,
             remark: remark
         }, function(data) {
             if (data.success) {
@@ -327,17 +435,14 @@
         });
     });
 
-    // 打开模式选择
     function openModeSelect() {
         const modeModal = new bootstrap.Modal(document.getElementById('modeSelectModal'));
         modeModal.show();
     }
 
-    // 开始扫码
     function startScan(mode) {
         currentMode = mode;
         $('#modeSelectModal').modal('hide');
-
         if (mode === 'out') {
             const waybillModal = new bootstrap.Modal(document.getElementById('waybillModal'));
             waybillModal.show();
@@ -350,7 +455,6 @@
         }
     }
 
-    // 运单号扫码
     function scanWaybill() {
         $('#waybillScanArea').removeClass('d-none');
         stopWaybillScanner();
@@ -374,7 +478,6 @@
         }
     }
 
-    // 确认运单号
     function confirmWaybill() {
         currentWaybill = $('#waybillNumber').val().trim();
         if (!currentWaybill) {
@@ -387,21 +490,17 @@
         openScanner();
     }
 
-    // 打开产品扫码模态框
     function openScanner() {
         const scannerModal = new bootstrap.Modal(document.getElementById('scannerModal'));
         scannerModal.show();
-
         $('#scanModeText').text(currentMode === 'in' ? '扫码入库' : '扫码出库');
         $('#waybillDisplay').text(currentMode === 'out' ? `运单号：${currentWaybill}` : '');
-
         if (currentMode === 'out') {
             $('#outboundList').removeClass('d-none');
             updateScannedList();
         } else {
             $('#outboundList').addClass('d-none');
         }
-
         codeReader = new ZXing.BrowserMultiFormatReader();
         codeReader.decodeFromVideoDevice(null, 'scannerVideo', (result, err) => {
             if (result) {
@@ -412,7 +511,6 @@
                 alert('扫码失败，请重试');
             }
         });
-
         $('#scannerModal').on('hidden.bs.modal', function() {
             if (codeReader) {
                 codeReader.reset();
@@ -420,7 +518,6 @@
         });
     }
 
-    // 处理扫描到的条码
     function handleScannedBarcode(barcode) {
         $.get(`/api/product/${barcode}`, function(data) {
             if (data.success) {
@@ -438,35 +535,15 @@
                         }
                     });
                 } else {
-                    // 出库模式
-                    if (scannedProducts.length === 0) {
-                        // 第一个产品，弹出拍照确认
-                        pendingProduct = product;
-                        $('#confirmProductName').text(`${product.name}${product.spec ? ' (' + product.spec + ')' : ''}`);
-                        $('#confirmProductSpec').text(`规格：${product.spec || '无'} | 单位：${product.unit}`);
-                        $('#confirmCameraArea').addClass('d-none');
-                        stopConfirmPhotoStream();
-                        $('#scannerModal').modal('hide');
-                        const productConfirmModal = new bootstrap.Modal(document.getElementById('productConfirmModal'));
-                        productConfirmModal.show();
-                        $('#productConfirmModal').on('hidden.bs.modal', function() {
-                            stopConfirmPhotoStream();
-                            openScanner();
-                            $(this).off('hidden.bs.modal');
-                        });
-                    } else {
-                        // 后续产品，直接加入列表（无照片）
-                        scannedProducts.push({
-                            id: product.id,
-                            barcode: product.barcode || '',
-                            name: product.name,
-                            spec: product.spec,
-                            unit: product.unit,
-                            quantity: 1,
-                            photo: ''
-                        });
-                        updateScannedList();
-                    }
+                    scannedProducts.push({
+                        id: product.id,
+                        barcode: product.barcode || '',
+                        name: product.name,
+                        spec: product.spec,
+                        unit: product.unit,
+                        quantity: 1
+                    });
+                    updateScannedList();
                 }
             } else {
                 if (confirm(`未找到条码 ${barcode} 对应的产品，是否添加新产品？`)) {
@@ -480,59 +557,6 @@
         });
     }
 
-    // 拍照功能
-    function startTakePhoto() {
-        $('#confirmCameraArea').removeClass('d-none');
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-            .then(function(stream) {
-                confirmPhotoStream = stream;
-                document.getElementById('confirmPhotoVideo').srcObject = stream;
-            })
-            .catch(function(err) {
-                console.error('无法访问摄像头:', err);
-                alert('无法访问后置摄像头，请检查权限设置');
-                $('#confirmCameraArea').addClass('d-none');
-            });
-    }
-
-    function captureConfirmPhoto() {
-        if (!pendingProduct) return;
-        const video = document.getElementById('confirmPhotoVideo');
-        if (!video.srcObject) {
-            alert('请先打开摄像头');
-            return;
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const photoData = canvas.toDataURL('image/jpeg', 0.8);
-
-        scannedProducts.push({
-            id: pendingProduct.id,
-            barcode: pendingProduct.barcode || '',
-            name: pendingProduct.name,
-            spec: pendingProduct.spec,
-            unit: pendingProduct.unit,
-            quantity: 1,
-            photo: photoData
-        });
-
-        stopConfirmPhotoStream();
-        $('#confirmCameraArea').addClass('d-none');
-        bootstrap.Modal.getInstance(document.getElementById('productConfirmModal')).hide();
-        updateScannedList();
-    }
-
-    function stopConfirmPhotoStream() {
-        if (confirmPhotoStream) {
-            confirmPhotoStream.getTracks().forEach(track => track.stop());
-            confirmPhotoStream = null;
-        }
-    }
-
-    // 更新已扫描产品列表
     function updateScannedList() {
         const list = $('#scannedProducts').empty();
         if (scannedProducts.length === 0) {
@@ -545,7 +569,7 @@
                     <div>
                         <strong>${p.name}</strong> ${p.spec ? '(' + p.spec + ')' : ''}
                         <span class="badge bg-primary ms-2">${p.quantity} ${p.unit}</span>
-                        ${i === 0 ? '<span class="badge bg-success ms-1">主记录(已拍照)</span>' : ''}
+                        ${i === 0 ? '<span class="badge bg-success ms-1">主记录</span>' : ''}
                     </div>
                     <button class="btn btn-sm btn-outline-danger" onclick="removeProduct(${i})"><i class="fa fa-trash"></i></button>
                 </li>`);
@@ -558,24 +582,43 @@
         updateScannedList();
     }
 
-    // 确认出库（批量提交）
     function confirmOutbound() {
         if (scannedProducts.length === 0) {
             alert('请先扫描产品');
             return;
         }
-        if (!scannedProducts[0].photo) {
-            alert('母记录必须拍照，请重新添加第一个产品并拍照');
-            return;
-        }
+        let productHtml = '<table class="table table-sm"><thead><tr><th>产品名称</th><th>规格</th><th>数量</th></tr></thead><tbody>';
+        scannedProducts.forEach(p => {
+            productHtml += `<tr><td>${p.name}</td><td>${p.spec || '-'}</td><td>${p.quantity} ${p.unit}</td></tr>`;
+        });
+        productHtml += '</tbody></table>';
+        $('#confirmProductList').html(productHtml);
+        // 重置下拉
+        $('#outboundPlatformSelect').val('红书');
+        $('#outboundPlatformManual').addClass('d-none').val('');
+        $('#outboundRemarkSelect').val('样品');
+        $('#outboundRemarkManual').addClass('d-none').val('');
+        const confirmModal = new bootstrap.Modal(document.getElementById('confirmOutboundModal'));
+        confirmModal.show();
+    }
+
+    function submitOutboundWithRemark() {
+        const platformSelect = $('#outboundPlatformSelect').val();
+        const platformManual = $('#outboundPlatformManual').val();
+        let platform = platformSelect === 'other' ? (platformManual || '其它') : platformSelect;
+
+        const remarkSelect = $('#outboundRemarkSelect').val();
+        const remarkManual = $('#outboundRemarkManual').val();
+        let remark = remarkSelect === 'other' ? (remarkManual || '其它') : remarkSelect;
+
         const payload = {
             waybill_number: currentWaybill,
             operator: '手机扫码',
-            remark: '',
-            items: scannedProducts.map((p, i) => ({
+            remark: remark,
+            platform: platform,
+            items: scannedProducts.map(p => ({
                 product_id: p.id,
-                quantity: p.quantity,
-                photo_data: i === 0 ? p.photo : ''
+                quantity: p.quantity
             }))
         };
         $.ajax({
@@ -587,6 +630,7 @@
                 alert(res.message);
                 scannedProducts = [];
                 currentWaybill = '';
+                $('#confirmOutboundModal').modal('hide');
                 $('#scannerModal').modal('hide');
                 location.reload();
             },
@@ -595,5 +639,9 @@
             }
         });
     }
+
+    $(document).ready(function() {
+        toggleFields();
+    });
 </script>
 {% endblock %}

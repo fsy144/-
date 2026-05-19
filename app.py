@@ -1,8 +1,11 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, date
 import os
 import base64
+import io
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment
 
 app = Flask(__name__)
 app.config.from_pyfile('config.py')
@@ -25,13 +28,17 @@ class Product(db.Model):
 class StockRecord(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
-    type = db.Column(db.String(10), nullable=False)
+    type = db.Column(db.String(10), nullable=False)  # 'in', 'out', 'adjust_in', 'adjust_out'
     quantity = db.Column(db.Integer, nullable=False)
     operator = db.Column(db.String(50))
     remark = db.Column(db.String(200))
     waybill_number = db.Column(db.String(100))
     photo_path = db.Column(db.String(200))
     parent_id = db.Column(db.Integer, db.ForeignKey('stock_record.id'), nullable=True)
+    batch_no = db.Column(db.String(100))
+    production_date = db.Column(db.Date)
+    expiry_date = db.Column(db.Date)
+    platform = db.Column(db.String(50))
     create_time = db.Column(db.DateTime, default=datetime.now)
 
     product = db.relationship('Product', backref=db.backref('records', lazy=True))
@@ -43,8 +50,27 @@ with app.app_context():
 
 @app.route('/')
 def index():
-    products = Product.query.order_by(Product.create_time.desc()).all()
-    return render_template('index.html', products=products)
+    from sqlalchemy import case, func
+
+    batch_stock_subq = db.session.query(
+        StockRecord.product_id,
+        StockRecord.batch_no,
+        func.sum(case((StockRecord.type.in_(['in', 'adjust_in']), StockRecord.quantity),
+                       (StockRecord.type.in_(['out', 'adjust_out']), -StockRecord.quantity),
+                       else_=0)).label('net_stock')
+    ).group_by(StockRecord.product_id, StockRecord.batch_no).subquery()
+
+    inventory_rows = db.session.query(
+        Product.id.label('product_id'),
+        Product.barcode,
+        Product.name,
+        Product.spec,
+        Product.unit,
+        batch_stock_subq.c.batch_no,
+        func.coalesce(batch_stock_subq.c.net_stock, 0).label('batch_stock')
+    ).outerjoin(batch_stock_subq, Product.id == batch_stock_subq.c.product_id).all()
+
+    return render_template('index.html', inventory_rows=inventory_rows)
 
 @app.route('/records/<record_type>')
 def records(record_type):
@@ -58,6 +84,75 @@ def records(record_type):
 
     title = '入库记录' if record_type == 'in' else '出库记录'
     return render_template('records.html', records=records_list, record_type=record_type, title=title)
+
+@app.route('/records/<record_type>/download')
+def download_records(record_type):
+    if record_type not in ['in', 'out']:
+        return '参数错误', 400
+
+    if record_type == 'in':
+        records_list = StockRecord.query.filter_by(type='in').order_by(StockRecord.create_time.desc()).all()
+        filename = '入库记录.xlsx'
+    else:
+        records_list = StockRecord.query.filter_by(type='out', parent_id=None).order_by(StockRecord.create_time.desc()).all()
+        filename = '出库记录.xlsx'
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = '记录'
+
+    headers = ['操作时间', '产品条码', '产品名称', '规格', '数量', '操作人', '批次号', '生产日期', '到期日期', '平台', '备注']
+    if record_type == 'out':
+        headers.insert(6, '运单号')
+    ws.append(headers)
+
+    for rec in records_list:
+        row = [
+            rec.create_time.strftime('%Y-%m-%d %H:%M:%S') if rec.create_time else '',
+            rec.product.barcode if rec.product else '',
+            rec.product.name if rec.product else '',
+            rec.product.spec if rec.product else '',
+            f"{rec.quantity} {rec.product.unit if rec.product else ''}",
+            rec.operator or '',
+            rec.batch_no or '',
+            rec.production_date.strftime('%Y-%m-%d') if rec.production_date else '',
+            rec.expiry_date.strftime('%Y-%m-%d') if rec.expiry_date else '',
+            rec.platform or '',
+            rec.remark or ''
+        ]
+        if record_type == 'out':
+            row.insert(6, rec.waybill_number or '')
+        ws.append(row)
+
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal='center')
+
+    for col in ws.columns:
+        max_length = 0
+        col_letter = col[0].column_letter
+        for cell in col:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        ws.column_dimensions[col_letter].width = min(max_length + 2, 30)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+
+@app.route('/inventory')
+def inventory_page():
+    return render_template('inventory.html')
 
 @app.route('/api/product/<barcode>')
 def get_product(barcode):
@@ -82,6 +177,13 @@ def stock_in():
         quantity = int(request.form.get('quantity', 1))
         operator = request.form.get('operator', '')
         remark = request.form.get('remark', '')
+        batch_no = request.form.get('batch_no', '')
+        production_date_str = request.form.get('production_date', '')
+        expiry_date_str = request.form.get('expiry_date', '')
+        platform = request.form.get('platform', '')
+
+        production_date = datetime.strptime(production_date_str, '%Y-%m-%d').date() if production_date_str else None
+        expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date() if expiry_date_str else None
 
         product = Product.query.get_or_404(product_id)
         product.stock += quantity
@@ -91,7 +193,11 @@ def stock_in():
             type='in',
             quantity=quantity,
             operator=operator,
-            remark=remark
+            remark=remark,
+            batch_no=batch_no,
+            production_date=production_date,
+            expiry_date=expiry_date,
+            platform=platform
         )
         db.session.add(record)
         db.session.commit()
@@ -109,6 +215,13 @@ def stock_out():
         remark = request.form.get('remark', '')
         waybill_number = request.form.get('waybill_number', '')
         photo_data = request.form.get('photo_data', '')
+        batch_no = request.form.get('batch_no', '')
+        production_date_str = request.form.get('production_date', '')
+        expiry_date_str = request.form.get('expiry_date', '')
+        platform = request.form.get('platform', '')
+
+        production_date = datetime.strptime(production_date_str, '%Y-%m-%d').date() if production_date_str else None
+        expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date() if expiry_date_str else None
 
         product = Product.query.get_or_404(product_id)
         if product.stock < quantity:
@@ -133,7 +246,11 @@ def stock_out():
             operator=operator,
             remark=remark,
             waybill_number=waybill_number,
-            photo_path=photo_path
+            photo_path=photo_path,
+            batch_no=batch_no,
+            production_date=production_date,
+            expiry_date=expiry_date,
+            platform=platform
         )
         db.session.add(record)
         db.session.commit()
@@ -149,12 +266,13 @@ def stock_out_batch():
         waybill = data.get('waybill_number', '').strip()
         operator = data.get('operator', '')
         remark = data.get('remark', '')
+        platform = data.get('platform', '')
         items = data.get('items', [])
 
         if not items:
             return jsonify({'success': False, 'message': '没有产品'})
 
-        # 创建主记录（第一个产品）
+        # 主记录
         first_item = items[0]
         product = Product.query.get_or_404(first_item['product_id'])
         if product.stock < first_item.get('quantity', 1):
@@ -178,15 +296,17 @@ def stock_out_batch():
             operator=operator,
             remark=remark,
             waybill_number=waybill,
-            photo_path=photo_path
+            photo_path=photo_path,
+            batch_no=first_item.get('batch_no', ''),
+            production_date=datetime.strptime(first_item['production_date'], '%Y-%m-%d').date() if first_item.get('production_date') else None,
+            expiry_date=datetime.strptime(first_item['expiry_date'], '%Y-%m-%d').date() if first_item.get('expiry_date') else None,
+            platform=platform
         )
         db.session.add(main_record)
         product.stock -= first_item.get('quantity', 1)
-
-        # 先 flush，获得主记录 id
         db.session.flush()
 
-        # 处理剩余子记录
+        # 子记录
         for item in items[1:]:
             prod = Product.query.get_or_404(item['product_id'])
             if prod.stock < item.get('quantity', 1):
@@ -199,8 +319,12 @@ def stock_out_batch():
                 quantity=item.get('quantity', 1),
                 operator=operator,
                 remark='',
-                waybill_number=waybill,  # 子记录也保存运单号方便查询
-                parent_id=main_record.id
+                waybill_number=waybill,
+                parent_id=main_record.id,
+                batch_no=item.get('batch_no', ''),
+                production_date=datetime.strptime(item['production_date'], '%Y-%m-%d').date() if item.get('production_date') else None,
+                expiry_date=datetime.strptime(item['expiry_date'], '%Y-%m-%d').date() if item.get('expiry_date') else None,
+                platform=platform
             )
             db.session.add(sub_record)
             prod.stock -= item.get('quantity', 1)
@@ -210,6 +334,53 @@ def stock_out_batch():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': f'批量出库失败：{str(e)}'})
+
+@app.route('/api/inventory/adjust', methods=['POST'])
+def adjust_inventory():
+    try:
+        product_id = request.form.get('product_id')
+        quantity = int(request.form.get('quantity', 0))
+        operator = request.form.get('operator', '管理员')
+        remark = request.form.get('remark', '')
+        batch_no = request.form.get('batch_no', '')
+        production_date_str = request.form.get('production_date', '')
+        expiry_date_str = request.form.get('expiry_date', '')
+        adjust_type = request.form.get('adjust_type')
+
+        if adjust_type not in ['in', 'out']:
+            return jsonify({'success': False, 'message': '操作类型错误'})
+        if quantity <= 0:
+            return jsonify({'success': False, 'message': '数量必须大于0'})
+
+        production_date = datetime.strptime(production_date_str, '%Y-%m-%d').date() if production_date_str else None
+        expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date() if expiry_date_str else None
+
+        product = Product.query.get_or_404(product_id)
+
+        if adjust_type == 'out' and product.stock < quantity:
+            return jsonify({'success': False, 'message': f'库存不足！当前库存：{product.stock} {product.unit}'})
+
+        record_type = 'adjust_in' if adjust_type == 'in' else 'adjust_out'
+        delta = quantity if adjust_type == 'in' else -quantity
+
+        record = StockRecord(
+            product_id=product_id,
+            type=record_type,
+            quantity=quantity,
+            operator=operator,
+            remark=remark,
+            batch_no=batch_no,
+            production_date=production_date,
+            expiry_date=expiry_date
+        )
+        product.stock += delta
+        db.session.add(record)
+        db.session.commit()
+
+        return jsonify({'success': True, 'message': f'库存调整成功，当前库存：{product.stock}'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'调整失败：{str(e)}'})
 
 @app.route('/api/product/add', methods=['POST'])
 def add_product():
