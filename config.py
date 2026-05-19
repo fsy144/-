@@ -1,6 +1,4 @@
-# 基础配置
 import os
-import secrets
 
 # 项目根目录
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -9,8 +7,8 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(BASE_DIR, 'instance', 'inventory.db')
 SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-# 密钥（用于后续扩展登录功能）
-SECRET_KEY = secrets.token_hex(32)
+# 固定密钥（请替换为你自己生成的值，不要泄露）
+SECRET_KEY = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2'
 
 # 调试模式
 DEBUG = True

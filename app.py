@@ -11,6 +11,7 @@ from functools import wraps
 
 app = Flask(__name__)
 app.config.from_pyfile('config.py')
+app.config['SESSION_COOKIE_SECURE'] = True
 
 os.makedirs(app.instance_path, exist_ok=True)
 os.makedirs(os.path.join(app.static_folder, 'uploads'), exist_ok=True)
