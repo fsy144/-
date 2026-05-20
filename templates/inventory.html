@@ -11,10 +11,7 @@
         <form id="adjustForm" class="row g-3">
             <div class="col-md-3">
                 <label class="form-label">产品条码/批次号</label>
-                <div class="input-group">
-                    <input type="text" id="adjustBarcode" class="form-control" placeholder="输入条码或批次号" required>
-                    <button class="btn btn-outline-info" type="button" onclick="searchByAdjustInput()">查询库存</button>
-                </div>
+                <input type="text" id="adjustBarcode" class="form-control" placeholder="输入条码或批次号" required>
             </div>
             <div class="col-md-2">
                 <label class="form-label">操作类型</label>
@@ -49,6 +46,7 @@
             </div>
             <div class="col-12">
                 <button type="button" id="adjustSubmit" class="btn btn-primary">确认调整</button>
+                <button type="button" class="btn btn-outline-info ms-2" onclick="searchByAdjustInput()">查询库存</button>
             </div>
         </form>
     </div>
@@ -73,7 +71,6 @@
         loadAllInventory();
     });
 
-    // 加载全部库存
     function loadAllInventory() {
         $.get('/api/inventory/search', { keyword: '' }, function(res) {
             renderInventoryTable(res);
@@ -82,7 +79,6 @@
         });
     }
 
-    // 根据输入框内容查询
     function searchByAdjustInput() {
         const keyword = $('#adjustBarcode').val().trim();
         if (!keyword) {
@@ -96,7 +92,6 @@
         });
     }
 
-    // 渲染库存表格
     function renderInventoryTable(res) {
         if (res.success) {
             if (res.data.length === 0) {
@@ -114,7 +109,6 @@
         }
     }
 
-    // 调整库存提交
     $('#adjustSubmit').on('click', function() {
         const barcode = $('#adjustBarcode').val().trim();
         const batch = $('#adjustBatch').val().trim();
@@ -126,7 +120,6 @@
             alert('批次号不能为空');
             return;
         }
-        // 根据条码查找产品ID
         $.get(`/api/product/${barcode}`, function(data) {
             if (!data.success) {
                 alert('未找到该条码对应的产品，请先在首页添加');
@@ -157,13 +150,11 @@
             }, function(res) {
                 if (res.success) {
                     alert(res.message);
-                    // 清空表单部分字段
                     $('#adjustQuantity').val('');
                     $('#adjustBatch').val('');
                     $('#adjustProductionDate').val('');
                     $('#adjustExpiryDate').val('');
                     $('#adjustRemark').val('');
-                    // 重新加载库存
                     loadAllInventory();
                 } else {
                     alert(res.message);
