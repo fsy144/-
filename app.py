@@ -15,20 +15,26 @@ app.config['SESSION_COOKIE_SECURE'] = True
 
 os.makedirs(app.instance_path, exist_ok=True)
 os.makedirs(os.path.join(app.static_folder, 'uploads'), exist_ok=True)
+os.makedirs(os.path.join(app.static_folder, 'avatars'), exist_ok=True)
 
 db = SQLAlchemy(app)
 
-# ---------- 用户模型 ----------
+# ---------- 用户模型（增加角色）----------
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
+    role = db.Column(db.String(20), default='user')  # 'admin' or 'user'
+    avatar_path = db.Column(db.String(200), default='')
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+    def is_admin(self):
+        return self.role == 'admin'
 
 # ---------- 产品模型 ----------
 class Product(db.Model):
@@ -45,7 +51,7 @@ class Product(db.Model):
 class StockRecord(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
-    type = db.Column(db.String(10), nullable=False)  # 'in', 'out', 'adjust_in', 'adjust_out'
+    type = db.Column(db.String(10), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
     operator = db.Column(db.String(50))
     remark = db.Column(db.String(200))
@@ -63,9 +69,15 @@ class StockRecord(db.Model):
 
 with app.app_context():
     db.create_all()
+    # 如果没有管理员，创建一个默认管理员
+    if not User.query.filter_by(username='admin').first():
+        admin = User(username='admin', role='admin')
+        admin.set_password('admin123')  # 请尽快修改
+        db.session.add(admin)
+        db.session.commit()
     print("✅ 数据库初始化成功！")
 
-# ---------- 登录装饰器 ----------
+# ---------- 装饰器 ----------
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -74,7 +86,17 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# ---------- 全局登录拦截 ----------
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        user = User.query.get(session['user_id'])
+        if not user or not user.is_admin():
+            return jsonify({'success': False, 'message': '需要管理员权限'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
 @app.before_request
 def require_login():
     allowed_endpoints = ['login', 'register', 'static']
@@ -93,6 +115,7 @@ def login():
         if user and user.check_password(password):
             session['user_id'] = user.id
             session['username'] = user.username
+            session['role'] = user.role
             return redirect(url_for('index'))
         else:
             return render_template('login.html', error='用户名或密码错误')
@@ -107,12 +130,13 @@ def register():
             return render_template('register.html', error='用户名和密码不能为空')
         if User.query.filter_by(username=username).first():
             return render_template('register.html', error='用户名已存在')
-        user = User(username=username)
+        user = User(username=username, role='user')
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
         session['user_id'] = user.id
         session['username'] = user.username
+        session['role'] = user.role
         return redirect(url_for('index'))
     return render_template('register.html')
 
@@ -121,11 +145,31 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# ---------- 工作台（首页） ----------
+# ---------- 头像上传 ----------
+@app.route('/api/avatar/upload', methods=['POST'])
+def upload_avatar():
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': '没有文件'})
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': '文件名为空'})
+    user = User.query.get(session['user_id'])
+    if not user:
+        return jsonify({'success': False, 'message': '用户不存在'})
+    ext = file.filename.rsplit('.', 1)[-1].lower()
+    if ext not in ['jpg', 'jpeg', 'png', 'gif']:
+        return jsonify({'success': False, 'message': '仅支持图片格式'})
+    filename = f"avatar_{user.id}.{ext}"
+    filepath = os.path.join(app.static_folder, 'avatars', filename)
+    file.save(filepath)
+    user.avatar_path = f'avatars/{filename}'
+    db.session.commit()
+    return jsonify({'success': True, 'avatar_url': url_for('static', filename=user.avatar_path)})
+
+# ---------- 工作台 ----------
 @app.route('/')
 def index():
     from sqlalchemy import case, func
-
     batch_stock_subq = db.session.query(
         StockRecord.product_id,
         StockRecord.batch_no,
@@ -146,25 +190,27 @@ def index():
 
     return render_template('index.html', inventory_rows=inventory_rows)
 
-# ---------- 出入库记录页面 ----------
+# ---------- 记录页面 ----------
 @app.route('/records/<record_type>')
 def records(record_type):
     if record_type not in ['in', 'out']:
         return redirect(url_for('index'))
-
     if record_type == 'in':
         records_list = StockRecord.query.filter_by(type='in').order_by(StockRecord.create_time.desc()).all()
     else:
         records_list = StockRecord.query.filter_by(type='out', parent_id=None).order_by(StockRecord.create_time.desc()).all()
-
     title = '入库记录' if record_type == 'in' else '出库记录'
     return render_template('records.html', records=records_list, record_type=record_type, title=title)
 
-# ---------- 下载 Excel ----------
-@app.route('/records/<record_type>/download')
+# ---------- 下载 Excel（支持字段选择）----------
+@app.route('/records/<record_type>/download', methods=['POST'])
 def download_records(record_type):
     if record_type not in ['in', 'out']:
         return '参数错误', 400
+
+    selected_fields = request.form.getlist('fields')
+    if not selected_fields:
+        return '未选择字段', 400
 
     if record_type == 'in':
         records_list = StockRecord.query.filter_by(type='in').order_by(StockRecord.create_time.desc()).all()
@@ -173,31 +219,29 @@ def download_records(record_type):
         records_list = StockRecord.query.filter_by(type='out', parent_id=None).order_by(StockRecord.create_time.desc()).all()
         filename = '出库记录.xlsx'
 
+    # 所有可用字段及对应数据提取函数
+    field_defs = {
+        '操作时间': lambda r: r.create_time.strftime('%Y-%m-%d %H:%M:%S') if r.create_time else '',
+        '产品条码': lambda r: r.product.barcode if r.product else '',
+        '产品名称': lambda r: r.product.name if r.product else '',
+        '规格': lambda r: r.product.spec if r.product else '',
+        '数量': lambda r: f"{r.quantity} {r.product.unit if r.product else ''}",
+        '操作人': lambda r: r.operator or '',
+        '批次号': lambda r: r.batch_no or '',
+        '生产日期': lambda r: r.production_date.strftime('%Y-%m-%d') if r.production_date else '',
+        '到期日期': lambda r: r.expiry_date.strftime('%Y-%m-%d') if r.expiry_date else '',
+        '平台': lambda r: r.platform or '',
+        '备注': lambda r: r.remark or '',
+        '运单号': lambda r: r.waybill_number or ''
+    }
+
     wb = Workbook()
     ws = wb.active
     ws.title = '记录'
-
-    headers = ['操作时间', '产品条码', '产品名称', '规格', '数量', '操作人', '批次号', '生产日期', '到期日期', '平台', '备注']
-    if record_type == 'out':
-        headers.insert(6, '运单号')
-    ws.append(headers)
+    ws.append(selected_fields)
 
     for rec in records_list:
-        row = [
-            rec.create_time.strftime('%Y-%m-%d %H:%M:%S') if rec.create_time else '',
-            rec.product.barcode if rec.product else '',
-            rec.product.name if rec.product else '',
-            rec.product.spec if rec.product else '',
-            f"{rec.quantity} {rec.product.unit if rec.product else ''}",
-            rec.operator or '',
-            rec.batch_no or '',
-            rec.production_date.strftime('%Y-%m-%d') if rec.production_date else '',
-            rec.expiry_date.strftime('%Y-%m-%d') if rec.expiry_date else '',
-            rec.platform or '',
-            rec.remark or ''
-        ]
-        if record_type == 'out':
-            row.insert(6, rec.waybill_number or '')
+        row = [field_defs[f](rec) for f in selected_fields]
         ws.append(row)
 
     for cell in ws[1]:
@@ -205,15 +249,15 @@ def download_records(record_type):
         cell.alignment = Alignment(horizontal='center')
 
     for col in ws.columns:
-        max_length = 0
+        max_len = 0
         col_letter = col[0].column_letter
         for cell in col:
             try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
+                if cell.value and len(str(cell.value)) > max_len:
+                    max_len = len(str(cell.value))
             except:
                 pass
-        ws.column_dimensions[col_letter].width = min(max_length + 2, 30)
+        ws.column_dimensions[col_letter].width = min(max_len + 2, 30)
 
     output = io.BytesIO()
     wb.save(output)
@@ -341,7 +385,8 @@ def stock_in():
     try:
         product_id = request.form.get('product_id')
         quantity = int(request.form.get('quantity', 1))
-        operator = request.form.get('operator', '')
+        # 操作人强制使用当前登录用户名
+        operator = session.get('username', '未知')
         remark = request.form.get('remark', '')
         batch_no = request.form.get('batch_no', '')
         production_date_str = request.form.get('production_date', '')
@@ -378,7 +423,7 @@ def stock_out():
     try:
         product_id = request.form.get('product_id')
         quantity = int(request.form.get('quantity', 1))
-        operator = request.form.get('operator', '')
+        operator = session.get('username', '未知')
         remark = request.form.get('remark', '')
         waybill_number = request.form.get('waybill_number', '')
         photo_data = request.form.get('photo_data', '')
@@ -432,7 +477,7 @@ def stock_out_batch():
     try:
         data = request.get_json()
         waybill = data.get('waybill_number', '').strip()
-        operator = data.get('operator', '')
+        operator = session.get('username', '未知')
         remark = data.get('remark', '')
         platform = data.get('platform', '')
         items = data.get('items', [])
@@ -507,7 +552,7 @@ def adjust_inventory():
     try:
         product_id = request.form.get('product_id')
         quantity = int(request.form.get('quantity', 0))
-        operator = request.form.get('operator', '管理员')
+        operator = session.get('username', '管理员')
         remark = request.form.get('remark', '')
         batch_no = request.form.get('batch_no', '')
         production_date_str = request.form.get('production_date', '')
@@ -550,6 +595,52 @@ def adjust_inventory():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': f'调整失败：{str(e)}'})
+
+# ---------- 删除批次库存（仅管理员）----------
+@app.route('/api/inventory/delete_batch', methods=['POST'])
+@admin_required
+def delete_batch_inventory():
+    try:
+        data = request.get_json()
+        product_id = data.get('product_id')
+        batch_no = data.get('batch_no', '').strip()
+        operator = session.get('username', '管理员')
+
+        if not product_id or not batch_no:
+            return jsonify({'success': False, 'message': '参数不完整'})
+
+        from sqlalchemy import case, func
+        net_stock = db.session.query(
+            func.sum(case(
+                (StockRecord.type.in_(['in', 'adjust_in']), StockRecord.quantity),
+                (StockRecord.type.in_(['out', 'adjust_out']), -StockRecord.quantity),
+                else_=0
+            ))
+        ).filter(
+            StockRecord.product_id == product_id,
+            StockRecord.batch_no == batch_no
+        ).scalar() or 0
+
+        if net_stock <= 0:
+            return jsonify({'success': False, 'message': '该批次库存已为0'})
+
+        product = Product.query.get_or_404(product_id)
+        record = StockRecord(
+            product_id=product_id,
+            type='adjust_out',
+            quantity=net_stock,
+            operator=operator,
+            remark=f'管理员删除批次 {batch_no} 库存',
+            batch_no=batch_no
+        )
+        product.stock -= net_stock
+        db.session.add(record)
+        db.session.commit()
+
+        return jsonify({'success': True, 'message': f'已删除批次 {batch_no} 的 {net_stock} 件库存'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'删除失败：{str(e)}'})
 
 @app.route('/api/product/add', methods=['POST'])
 def add_product():

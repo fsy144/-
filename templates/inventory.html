@@ -30,7 +30,7 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label">操作人</label>
-                <input type="text" id="adjustOperator" class="form-control" placeholder="操作人" value="管理员">
+                <input type="text" id="adjustOperator" class="form-control" value="{{ session['username'] }}" readonly>
             </div>
             <div class="col-md-4">
                 <label class="form-label">生产日期</label>
@@ -62,13 +62,10 @@
         </div>
     </div>
 </div>
-
-
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    // 页面加载时自动获取全部库存
     $(document).ready(function() {
         loadAllInventory();
     });
@@ -114,37 +111,22 @@
     $('#adjustSubmit').on('click', function() {
         const barcode = $('#adjustBarcode').val().trim();
         const batch = $('#adjustBatch').val().trim();
-        if (!barcode) {
-            alert('请输入产品条码');
-            return;
-        }
-        if (!batch) {
-            alert('批次号不能为空');
-            return;
-        }
+        if (!barcode) { alert('请输入产品条码'); return; }
+        if (!batch) { alert('批次号不能为空'); return; }
         $.get(`/api/product/${barcode}`, function(data) {
-            if (!data.success) {
-                alert('未找到该条码对应的产品，请先在首页添加');
-                return;
-            }
+            if (!data.success) { alert('未找到该条码对应的产品'); return; }
             const productId = data.data.id;
             const adjustType = $('#adjustType').val();
             const quantity = $('#adjustQuantity').val();
-            const operator = $('#adjustOperator').val() || '管理员';
+            // 操作人从只读字段获取，无需再传
             const productionDate = $('#adjustProductionDate').val();
             const expiryDate = $('#adjustExpiryDate').val();
             const remark = $('#adjustRemark').val();
-
-            if (!quantity || quantity <= 0) {
-                alert('请输入有效数量');
-                return;
-            }
-
+            if (!quantity || quantity <= 0) { alert('请输入有效数量'); return; }
             $.post('/api/inventory/adjust', {
                 product_id: productId,
                 adjust_type: adjustType,
                 quantity: quantity,
-                operator: operator,
                 batch_no: batch,
                 production_date: productionDate,
                 expiry_date: expiryDate,
