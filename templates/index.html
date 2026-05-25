@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}扫码出入库 - 库存管理系统{% endblock %}
+
 {% block page_title %}扫码出入库{% endblock %}
 
 {% block content %}
@@ -44,6 +45,7 @@
                     <input type="number" id="quantity" class="form-control" placeholder="数量" value="1" min="1">
                 </div>
                 <div class="col-md-2">
+                    <!-- 修改：只读，自动填充当前用户名 -->
                     <input type="text" id="operator" class="form-control" placeholder="操作人" value="{{ session['username'] }}" readonly>
                 </div>
                 <div class="col-md-2">
@@ -67,19 +69,12 @@
                 </div>
                 <div class="col-md-3">
                     <select id="remarkSelect" class="form-select" onchange="handleRemarkSelect()">
-                        <option value="">选择备注</option>
-                        <option value="正常销售">正常销售</option>
-                        <option value="赠品">赠品</option>
-                        <option value="样品">样品</option>
-                        <option value="退货">退货</option>
-                        <option value="调拨">调拨</option>
-                        <option value="盘点">盘点</option>
-                        <option value="other">其它</option>
+                        <!-- 选项由JS动态生成 -->
                     </select>
                     <input type="text" id="remarkManual" class="form-control mt-1 d-none" placeholder="请输入备注">
                 </div>
                 <div class="col-md-3">
-                    <button type="button" id="submitBtn" class="btn btn-primary w-100" onclick="submitOperation()">确认操作</button>
+                    <button type="button" id="submitBtn" class="btn btn-primary w-100">确认操作</button>
                 </div>
             </form>
         </div>
@@ -101,7 +96,7 @@
                     <input type="text" id="newProductUnit" class="form-control" placeholder="单位" value="个">
                 </div>
                 <div class="col-md-3">
-                    <button type="button" id="addProductBtn" class="btn btn-success" onclick="addProduct()">添加产品</button>
+                    <button type="button" id="addProductBtn" class="btn btn-success">添加产品</button>
                 </div>
             </form>
         </div>
@@ -109,7 +104,7 @@
 </div>
 
 <!-- 库存列表卡片（按批次显示） -->
-<div class="card mt-4">
+<div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="fa fa-list"></i> 当前库存</span>
     </div>
@@ -124,7 +119,7 @@
                         <th>单位</th>
                         <th>批次号</th>
                         <th>库存数量</th>
-                        <th>操作</th>
+                        <th>操作</th> <!-- 新增列 -->
                     </tr>
                 </thead>
                 <tbody>
@@ -145,6 +140,8 @@
                                 {% else %}
                                     <span class="text-muted">无权限</span>
                                 {% endif %}
+                            {% else %}
+                                <span class="text-muted">-</span>
                             {% endif %}
                         </td>
                     </tr>
@@ -155,255 +152,727 @@
     </div>
 </div>
 
-<!-- 手机扫码模态框 -->
-<div class="modal fade" id="scanModal" tabindex="-1" aria-labelledby="scanModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+<!-- 模式选择模态框 -->
+<div class="modal fade" id="modeSelectModal" tabindex="-1" aria-labelledby="modeSelectModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="scanModalLabel">手机扫码</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="stopScanning()"></button>
+                <h5 class="modal-title" id="modeSelectModalLabel">选择操作模式</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                <div class="text-center mb-3">
-                    <p>请将条码对准摄像头，保持光线充足</p>
-                    <div id="cameraError" class="alert alert-danger d-none">
-                        无法访问摄像头，请检查：<br>
-                        1. 网站是否使用HTTPS协议<br>
-                        2. 是否已授予摄像头权限<br>
-                        3. 摄像头是否被其他应用占用
+            <div class="modal-body text-center">
+                <div class="row">
+                    <div class="col-6 mb-3">
+                        <button class="btn btn-primary w-100 py-4" onclick="startScan('in')">
+                            <i class="fa fa-arrow-down fa-2x mb-2"></i><br>
+                            入库模式
+                        </button>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <button class="btn btn-warning w-100 py-4" onclick="startScan('out')">
+                            <i class="fa fa-arrow-up fa-2x mb-2"></i><br>
+                            出库模式
+                        </button>
                     </div>
                 </div>
-                <div class="scan-container" style="position: relative; max-width: 100%; margin: 0 auto;">
-                    <video id="scanVideo" class="w-100" autoplay playsinline style="border-radius: 8px;"></video>
-                    <canvas id="scanCanvas" class="d-none"></canvas>
-                    <!-- 扫码框效果 -->
-                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80%; height: 150px; border: 2px solid #0d6efd; border-radius: 4px; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);">
-                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 2px; background: #0d6efd; animation: scanLine 2s linear infinite;"></div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="stopScanning()">关闭</button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- 扫码动画样式 -->
-<style>
-@keyframes scanLine {
-    0% { top: 0; }
-    100% { top: calc(100% - 2px); }
-}
-</style>
+<!-- 运单号输入模态框（出库用） -->
+<div class="modal fade" id="waybillModal" tabindex="-1" aria-labelledby="waybillModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="waybillModalLabel">请输入运单号</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="input-group">
+                        <input type="text" id="waybillNumber" class="form-control form-control-lg"
+                               placeholder="请输入运单号或扫描运单条码" autofocus>
+                        <button class="btn btn-outline-secondary" type="button" onclick="toggleWaybillScan()">
+                            <i class="fa fa-qrcode"></i> 扫码
+                        </button>
+                    </div>
+                    <div id="waybillScanArea" class="mt-2 d-none">
+                        <video id="waybillVideo" width="100%" autoplay playsinline muted></video>
+                        <div class="text-center mt-1 text-muted small">请将运单条码对准摄像头</div>
+                    </div>
+                </div>
+                <div class="d-grid">
+                    <button type="button" class="btn btn-primary" onclick="confirmWaybill()">确认运单号</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 手机扫码模态框 -->
+<div class="modal fade" id="scannerModal" tabindex="-1" aria-labelledby="scannerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="scannerModalLabel">
+                    <span id="scanModeText">扫码入库</span>
+                    <span id="waybillDisplay" class="ms-2 text-muted"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <video id="scannerVideo" width="100%" autoplay playsinline muted></video>
+                <div class="text-center mt-2 text-muted">请将条码对准摄像头</div>
+
+                <div id="outboundList" class="d-none mt-3">
+                    <h6>已扫描产品：</h6>
+                    <ul id="scannedProducts" class="list-group"></ul>
+                    <div class="d-grid mt-3">
+                        <button type="button" class="btn btn-success" onclick="confirmOutbound()">确认出库</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 快速入库模态框（手机扫码用） -->
+<div class="modal fade" id="quickInModal" tabindex="-1" aria-labelledby="quickInModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="quickInModalLabel">快速入库</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <p id="quickInProductName"></p>
+                </div>
+                <form id="quickInForm" class="row g-3">
+                    <input type="hidden" id="quickInProductId">
+                    <div class="col-md-6">
+                        <label class="form-label">数量</label>
+                        <input type="number" id="quickInQuantity" class="form-control" value="1" min="1">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">批次号 <span class="text-danger">*</span></label>
+                        <input type="text" id="quickInBatchNo" class="form-control" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">生产日期 <span class="text-danger">*</span></label>
+                        <input type="date" id="quickInProductionDate" class="form-control" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">到期日期 <span class="text-danger">*</span></label>
+                        <input type="date" id="quickInExpiryDate" class="form-control" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">平台</label>
+                        <select id="quickInPlatform" class="form-select">
+                            <option value="红书">红书</option>
+                            <option value="抖音">抖音</option>
+                            <option value="京东">京东</option>
+                            <option value="天猫">天猫</option>
+                            <option value="other">其它</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">备注</label>
+                        <select id="quickInRemark" class="form-select">
+                            <option value="退货">退货</option>
+                            <option value="样品">样品</option>
+                            <option value="other">其他</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitQuickIn()">确认入库</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 出库确认备注与平台模态框 -->
+<div class="modal fade" id="confirmOutboundModal" tabindex="-1" aria-labelledby="confirmOutboundModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmOutboundModalLabel">确认出库</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h6>本次出库产品清单：</h6>
+                <div id="confirmProductList" class="mb-3"></div>
+                <hr>
+                <div class="mb-3">
+                    <label class="form-label">出库平台</label>
+                    <select id="outboundPlatformSelect" class="form-select" onchange="handleBatchPlatformSelect()">
+                        <option value="红书">红书</option>
+                        <option value="抖音">抖音</option>
+                        <option value="京东">京东</option>
+                        <option value="天猫">天猫</option>
+                        <option value="other">其它</option>
+                    </select>
+                    <input type="text" id="outboundPlatformManual" class="form-control mt-1 d-none" placeholder="请输入平台">
+                </div>
+                <div class="mb-3">
+                    <label for="outboundRemark" class="form-label">出库备注</label>
+                    <select id="outboundRemarkSelect" class="form-select" onchange="handleBatchRemarkSelect()">
+                        <option value="样品">样品</option>
+                        <option value="奖品">奖品</option>
+                        <option value="满赠">满赠</option>
+                        <option value="换货">换货</option>
+                        <option value="内购">内购</option>
+                        <option value="other">其它</option>
+                    </select>
+                    <input type="text" id="outboundRemarkManual" class="form-control mt-1 d-none" placeholder="请输入备注">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitOutboundWithRemark()">确认提交</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
-<!-- 引入jsQR扫码库（支持二维码） -->
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-<!-- 引入jQuery（如果你的base.html已经引入，可以删除这行） -->
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.0/umd/index.min.js"></script>
 
 <script>
-    // 全局变量
-    let scanning = false;
-    let videoStream = null;
-    let animationFrameId = null;
+    let currentMode = 'in';
+    let currentWaybill = '';
+    let scannedProducts = [];
+    let codeReader = null;
+    let waybillCodeReader = null;
+    let currentScannedProduct = null;
 
-    // 回车自动查询
-    document.getElementById('barcodeInput').addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            searchProduct();
-        }
+    // 页面加载完成后初始化
+    $(document).ready(function() {
+        toggleFields();
+
+        // 模态框关闭时自动停止摄像头
+        $('#scannerModal').on('hidden.bs.modal', function() {
+            stopScanner();
+            scannedProducts = [];
+            updateScannedList();
+        });
+
+        $('#waybillModal').on('hidden.bs.modal', function() {
+            stopWaybillScanner();
+        });
+
+        // 扫码枪输入监听
+        $('#barcodeInput').on('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                searchProduct();
+            }
+        });
     });
 
-    // 查询产品
     function searchProduct() {
-        const barcode = document.getElementById('barcodeInput').value.trim();
-        if (!barcode) {
-            alert('请输入或扫描条码');
-            return;
-        }
+        const barcode = $('#barcodeInput').val().trim();
+        if (!barcode) return;
 
-        // 隐藏所有区域
-        document.getElementById('productInfo').classList.add('d-none');
-        document.getElementById('addProductForm').classList.add('d-none');
-
-        $.get(`/api/product/${barcode}`, function(res) {
-            if (res.success) {
-                // 显示产品信息
-                const product = res.data;
-                document.getElementById('productId').value = product.id;
-                document.getElementById('productName').textContent = `产品名称：${product.name} ${product.spec || ''}`;
-                document.getElementById('productStock').textContent = `当前库存：${product.stock || 0} ${product.unit || '个'}`;
-                document.getElementById('productInfo').classList.remove('d-none');
-
-                // 重置表单
-                document.getElementById('operationForm').reset();
-                document.getElementById('operator').value = "{{ session['username'] }}";
+        $.get(`/api/product/${barcode}`, function(data) {
+            if (data.success) {
+                const product = data.data;
+                $('#productId').val(product.id);
+                $('#productName').text(`名称：${product.name}${product.spec ? ' (' + product.spec + ')' : ''}`);
+                $('#productStock').text(`当前库存：${product.stock} ${product.unit}`);
+                $('#productInfo').removeClass('d-none');
+                $('#addProductForm').addClass('d-none');
+                $('#barcodeInput').val('');
+                $('#barcodeInput').focus();
                 toggleFields();
             } else {
-                // 显示添加产品表单
-                document.getElementById('newBarcode').value = barcode;
-                document.getElementById('addProductForm').classList.remove('d-none');
+                $('#newBarcode').val(barcode);
+                $('#addProductForm').removeClass('d-none');
+                $('#productInfo').addClass('d-none');
+                $('#newProductName').focus();
             }
-        }).fail(function() {
-            alert('查询失败，请检查网络连接');
         });
     }
 
-    // 切换出入库字段显示
     function toggleFields() {
-        const type = document.getElementById('operationType').value;
-        const platformField = document.getElementById('platformField');
-
-        if (type === 'out') {
-            platformField.classList.remove('d-none');
+        const type = $('#operationType').val();
+        const remarkSelect = $('#remarkSelect');
+        remarkSelect.empty();
+        if (type === 'in') {
+            remarkSelect.append('<option value="退货">退货</option>');
+            remarkSelect.append('<option value="样品">样品</option>');
+            remarkSelect.append('<option value="other">其他</option>');
+            $('#platformField').show();
         } else {
-            platformField.classList.add('d-none');
+            remarkSelect.append('<option value="样品">样品</option>');
+            remarkSelect.append('<option value="奖品">奖品</option>');
+            remarkSelect.append('<option value="满赠">满赠</option>');
+            remarkSelect.append('<option value="换货">换货</option>');
+            remarkSelect.append('<option value="内购">内购</option>');
+            remarkSelect.append('<option value="other">其它</option>');
+            $('#platformField').show();
         }
+        $('#remarkManual').addClass('d-none').val('');
+        $('#platformSelect').val('红书');
+        $('#platformManual').addClass('d-none').val('');
     }
 
-    // 处理平台选择
-    function handlePlatformSelect() {
-        const select = document.getElementById('platformSelect');
-        const manual = document.getElementById('platformManual');
-
-        if (select.value === 'other') {
-            manual.classList.remove('d-none');
-            manual.required = true;
-        } else {
-            manual.classList.add('d-none');
-            manual.required = false;
-        }
-    }
-
-    // 处理备注选择
     function handleRemarkSelect() {
-        const select = document.getElementById('remarkSelect');
-        const manual = document.getElementById('remarkManual');
-
-        if (select.value === 'other') {
-            manual.classList.remove('d-none');
-            manual.required = true;
+        const val = $('#remarkSelect').val();
+        if (val === 'other') {
+            $('#remarkManual').removeClass('d-none').focus();
         } else {
-            manual.classList.add('d-none');
-            manual.required = false;
+            $('#remarkManual').addClass('d-none').val('');
         }
     }
 
-    // 提交出入库操作
-    function submitOperation() {
-        const productId = document.getElementById('productId').value;
-        const type = document.getElementById('operationType').value;
-        const quantity = parseInt(document.getElementById('quantity').value);
-        const operator = document.getElementById('operator').value;
-        const batchNo = document.getElementById('batch_no').value;
-        const productionDate = document.getElementById('production_date').value;
-        const expiryDate = document.getElementById('expiry_date').value;
+    function handlePlatformSelect() {
+        const val = $('#platformSelect').val();
+        if (val === 'other') {
+            $('#platformManual').removeClass('d-none').focus();
+        } else {
+            $('#platformManual').addClass('d-none').val('');
+        }
+    }
 
-        let platform = document.getElementById('platformSelect').value;
-        if (platform === 'other') {
-            platform = document.getElementById('platformManual').value;
+    function handleBatchRemarkSelect() {
+        const val = $('#outboundRemarkSelect').val();
+        if (val === 'other') {
+            $('#outboundRemarkManual').removeClass('d-none').focus();
+        } else {
+            $('#outboundRemarkManual').addClass('d-none').val('');
+        }
+    }
+
+    function handleBatchPlatformSelect() {
+        const val = $('#outboundPlatformSelect').val();
+        if (val === 'other') {
+            $('#outboundPlatformManual').removeClass('d-none').focus();
+        } else {
+            $('#outboundPlatformManual').addClass('d-none').val('');
+        }
+    }
+
+    // 手动表单提交（含入库必填校验）
+    $('#submitBtn').on('click', function() {
+        const productId = $('#productId').val();
+        const type = $('#operationType').val();
+        const quantity = $('#quantity').val();
+        const operator = $('#operator').val();  // 只读字段，自动为当前用户
+        const batchNo = $('#batch_no').val().trim();
+        const productionDate = $('#production_date').val();
+        const expiryDate = $('#expiry_date').val();
+        const platformSelect = $('#platformSelect').val();
+        const platformManual = $('#platformManual').val().trim();
+        let platform = platformSelect === 'other' ? (platformManual || '其它') : platformSelect;
+        const remarkSelect = $('#remarkSelect').val();
+        const remarkManual = $('#remarkManual').val().trim();
+        let remark = remarkSelect === 'other' ? (remarkManual || '其他') : remarkSelect;
+
+        // 入库必填验证
+        if (type === 'in') {
+            if (!batchNo) { alert('请填写批次号'); return; }
+            if (!productionDate) { alert('请选择生产日期'); return; }
+            if (!expiryDate) { alert('请选择到期日期'); return; }
+            if (platformSelect === 'other' && !platformManual) { alert('请填写平台'); return; }
+            if (remarkSelect === 'other' && !remarkManual) { alert('请填写备注'); return; }
         }
 
-        let remark = document.getElementById('remarkSelect').value;
-        if (remark === 'other') {
-            remark = document.getElementById('remarkManual').value;
-        }
-
-        if (!quantity || quantity < 1) {
-            alert('请输入有效的数量');
-            return;
-        }
-
-        const data = {
+        const url = type === 'in' ? '/api/stock/in' : '/api/stock/out';
+        $.post(url, {
             product_id: productId,
-            type: type,
             quantity: quantity,
             operator: operator,
             batch_no: batchNo,
             production_date: productionDate,
             expiry_date: expiryDate,
-            platform: type === 'out' ? platform : '',
+            platform: platform,
             remark: remark
-        };
-
-        $.ajax({
-            url: '/api/inventory/operate',
-            type: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify(data),
-            success: function(res) {
-                if (res.success) {
-                    alert('操作成功');
-                    location.reload();
-                } else {
-                    alert('操作失败：' + res.message);
-                }
-            },
-            error: function() {
-                alert('请求失败，请检查网络连接');
+        }, function(data) {
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert(data.message);
             }
         });
-    }
+    });
 
     // 添加新产品
-    function addProduct() {
-        const barcode = document.getElementById('newBarcode').value;
-        const name = document.getElementById('newProductName').value.trim();
-        const spec = document.getElementById('newProductSpec').value.trim();
-        const unit = document.getElementById('newProductUnit').value.trim() || '个';
+    $('#addProductBtn').on('click', function() {
+        const barcode = $('#newBarcode').val();
+        const name = $('#newProductName').val().trim();
+        const spec = $('#newProductSpec').val().trim();
+        const unit = $('#newProductUnit').val().trim();
 
         if (!name) {
             alert('请输入产品名称');
             return;
         }
 
-        const data = {
+        $.post('/api/product/add', {
             barcode: barcode,
             name: name,
             spec: spec,
             unit: unit
-        };
+        }, function(data) {
+            if (data.success) {
+                alert(data.message);
+                $('#barcodeInput').val(barcode);
+                searchProduct();
+            } else {
+                alert(data.message);
+            }
+        });
+    });
 
-        $.ajax({
-            url: '/api/product/add',
-            type: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify(data),
-            success: function(res) {
-                if (res.success) {
-                    alert('产品添加成功');
-                    // 自动查询刚添加的产品
-                    document.getElementById('barcodeInput').value = barcode;
-                    searchProduct();
-                } else {
-                    alert('添加失败：' + res.message);
+    function openModeSelect() {
+        const modeModal = new bootstrap.Modal(document.getElementById('modeSelectModal'));
+        modeModal.show();
+    }
+
+    function startScan(mode) {
+        currentMode = mode;
+        $('#modeSelectModal').modal('hide');
+
+        if (mode === 'out') {
+            const waybillModal = new bootstrap.Modal(document.getElementById('waybillModal'));
+            waybillModal.show();
+            $('#waybillNumber').val('');
+            $('#waybillNumber').focus();
+            $('#waybillScanArea').addClass('d-none');
+            stopWaybillScanner();
+        } else {
+            $('#scanModeText').text('扫码入库');
+            $('#waybillDisplay').text('');
+            $('#outboundList').addClass('d-none');
+            const scannerModal = new bootstrap.Modal(document.getElementById('scannerModal'));
+            scannerModal.show();
+        }
+    }
+
+    function toggleWaybillScan() {
+        const scanArea = $('#waybillScanArea');
+        if (scanArea.hasClass('d-none')) {
+            scanArea.removeClass('d-none');
+            startWaybillScanner();
+        } else {
+            scanArea.addClass('d-none');
+            stopWaybillScanner();
+        }
+    }
+
+    function startWaybillScanner() {
+        stopWaybillScanner();
+        waybillCodeReader = new ZXing.BrowserMultiFormatReader();
+
+        waybillCodeReader.decodeFromVideoDevice(null, 'waybillVideo', (result, err) => {
+            if (result) {
+                $('#waybillNumber').val(result.text);
+                toggleWaybillScan();
+                playBeep();
+            }
+            if (err && !(err instanceof ZXing.NotFoundException)) {
+                console.error('运单扫码错误:', err);
+                if (err.name === 'NotAllowedError') {
+                    alert('摄像头权限被拒绝，请在浏览器设置中允许访问摄像头');
+                    toggleWaybillScan();
                 }
-            },
-            error: function() {
-                alert('请求失败，请检查网络连接');
+            }
+        }).catch(err => {
+            console.error('运单摄像头启动失败:', err);
+            alert('无法启动摄像头：' + err.message);
+            toggleWaybillScan();
+        });
+    }
+
+    function stopWaybillScanner() {
+        if (waybillCodeReader) {
+            waybillCodeReader.reset();
+            waybillCodeReader = null;
+        }
+    }
+
+    function confirmWaybill() {
+        currentWaybill = $('#waybillNumber').val().trim();
+        if (!currentWaybill) {
+            alert('请输入或扫描运单号');
+            return;
+        }
+        stopWaybillScanner();
+        $('#waybillModal').modal('hide');
+
+        scannedProducts = [];
+        $('#scanModeText').text('扫码出库');
+        $('#waybillDisplay').text(`运单号：${currentWaybill}`);
+        $('#outboundList').removeClass('d-none');
+        updateScannedList();
+        const scannerModal = new bootstrap.Modal(document.getElementById('scannerModal'));
+        scannerModal.show();
+    }
+
+    function openScanner() {
+        stopScanner();
+        codeReader = new ZXing.BrowserMultiFormatReader();
+
+        codeReader.decodeFromVideoDevice(null, 'scannerVideo', (result, err) => {
+            if (result) {
+                const barcode = result.text.trim();
+                if (barcode) {
+                    handleScannedBarcode(barcode);
+                    playBeep();
+                }
+            }
+            if (err && !(err instanceof ZXing.NotFoundException)) {
+                console.error('产品扫码错误:', err);
+                if (err.name === 'NotAllowedError') {
+                    alert('摄像头权限被拒绝，请在浏览器设置中允许访问摄像头');
+                    $('#scannerModal').modal('hide');
+                }
+            }
+        }).catch(err => {
+            console.error('产品摄像头启动失败:', err);
+            alert('无法启动摄像头：' + err.message);
+            $('#scannerModal').modal('hide');
+        });
+    }
+
+    function stopScanner() {
+        if (codeReader) {
+            codeReader.reset();
+            codeReader = null;
+        }
+    }
+
+    function playBeep() {
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            oscillator.frequency.value = 1000;
+            gainNode.gain.value = 0.1;
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.1);
+        } catch (e) {}
+    }
+
+    function handleScannedBarcode(barcode) {
+        $.get(`/api/product/${barcode}`, function(data) {
+            if (data.success) {
+                const product = data.data;
+                if (currentMode === 'in') {
+                    currentScannedProduct = product;
+                    $('#quickInProductId').val(product.id);
+                    $('#quickInProductName').text(`产品：${product.name}${product.spec ? ' (' + product.spec + ')' : ''}`);
+                    $('#quickInQuantity').val(1);
+                    $('#quickInBatchNo').val('');
+                    $('#quickInProductionDate').val('');
+                    $('#quickInExpiryDate').val('');
+                    $('#quickInPlatform').val('红书');
+                    $('#quickInRemark').val('退货');
+                    const quickInModal = new bootstrap.Modal(document.getElementById('quickInModal'));
+                    quickInModal.show();
+                } else {
+                    loadBatchesAndAdd(product);
+                }
+            } else {
+                if (confirm(`未找到条码 ${barcode} 对应的产品，是否添加新产品？`)) {
+                    $('#scannerModal').modal('hide');
+                    $('#newBarcode').val(barcode);
+                    $('#addProductForm').removeClass('d-none');
+                    $('#productInfo').addClass('d-none');
+                    $('#newProductName').focus();
+                }
             }
         });
     }
 
-    // 删除批次库存
-    function deleteBatch(barcode, batchNo, currentStock) {
-        if (!confirm(`确定要删除批次 ${batchNo} 的全部库存（${currentStock}）吗？此操作不可恢复。`)) return;
+    function submitQuickIn() {
+        const productId = $('#quickInProductId').val();
+        const quantity = $('#quickInQuantity').val();
+        const batchNo = $('#quickInBatchNo').val().trim();
+        const productionDate = $('#quickInProductionDate').val();
+        const expiryDate = $('#quickInExpiryDate').val();
+        const platform = $('#quickInPlatform').val();
+        const remark = $('#quickInRemark').val();
+        // 使用操作人字段的值（自动为当前用户）
+        const operator = $('#operator').val();
 
-        $.get(`/api/product/${barcode}`, function(data) {
-            if (!data.success) {
-                alert('产品不存在');
+        if (!batchNo) { alert('请填写批次号'); return; }
+        if (!productionDate) { alert('请选择生产日期'); return; }
+        if (!expiryDate) { alert('请选择到期日期'); return; }
+
+        $.post('/api/stock/in', {
+            product_id: productId,
+            quantity: quantity,
+            operator: operator,
+            batch_no: batchNo,
+            production_date: productionDate,
+            expiry_date: expiryDate,
+            platform: platform,
+            remark: remark
+        }, function(res) {
+            if (res.success) {
+                alert(`${currentScannedProduct.name} 入库成功！当前库存：${res.current_stock}`);
+                $('#quickInModal').modal('hide');
+                currentScannedProduct = null;
+            } else {
+                alert(res.message);
+            }
+        });
+    }
+
+    function loadBatchesAndAdd(product) {
+        $.get(`/api/product/${product.id}/batches`, function(res) {
+            const batches = res.success ? res.batches : [];
+            if (batches.length === 0) {
+                alert(`产品 ${product.name} 暂无批次号，请先入库建立批次。`);
                 return;
             }
+            const existing = scannedProducts.find(p => p.id === product.id);
+            if (existing) {
+                existing.quantity += 1;
+            } else {
+                scannedProducts.push({
+                    id: product.id,
+                    barcode: product.barcode || '',
+                    name: product.name,
+                    spec: product.spec,
+                    unit: product.unit,
+                    quantity: 1,
+                    batches: batches,
+                    selectedBatch: batches[0]
+                });
+            }
+            updateScannedList();
+        });
+    }
 
+    function updateScannedList() {
+        const list = $('#scannedProducts').empty();
+        if (scannedProducts.length === 0) {
+            list.append('<li class="list-group-item text-muted">暂无已扫描产品</li>');
+            return;
+        }
+        scannedProducts.forEach((p, i) => {
+            let batchOptions = '';
+            p.batches.forEach(b => {
+                batchOptions += `<option value="${b}" ${b === p.selectedBatch ? 'selected' : ''}>${b}</option>`;
+            });
+            const item = $(`
+                <li class="list-group-item d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center">
+                    <div class="d-flex align-items-center flex-wrap">
+                        <strong>${p.name}</strong> ${p.spec ? '(' + p.spec + ')' : ''}
+                        <span class="badge bg-primary ms-2">${p.quantity} ${p.unit}</span>
+                    </div>
+                    <div class="d-flex align-items-center mt-2 mt-md-0">
+                        <label class="me-2 mb-0">批次号:</label>
+                        <select class="form-select form-select-sm batch-select" style="width: auto;" data-index="${i}">
+                            ${batchOptions}
+                        </select>
+                        <button class="btn btn-sm btn-outline-danger ms-2" onclick="removeProduct(${i})"><i class="fa fa-trash"></i></button>
+                    </div>
+                </li>`);
+            list.append(item);
+        });
+        $('.batch-select').off('change').on('change', function() {
+            const idx = $(this).data('index');
+            scannedProducts[idx].selectedBatch = $(this).val();
+        });
+    }
+
+    function removeProduct(index) {
+        scannedProducts.splice(index, 1);
+        updateScannedList();
+    }
+
+    function confirmOutbound() {
+        if (scannedProducts.length === 0) {
+            alert('请先扫描产品');
+            return;
+        }
+        for (let p of scannedProducts) {
+            if (!p.selectedBatch) {
+                alert(`产品 ${p.name} 未选择批次号，请选择后再确认出库。`);
+                return;
+            }
+        }
+        let productHtml = '<table class="table table-sm"><thead><tr><th>产品名称</th><th>规格</th><th>数量</th><th>批次号</th></tr></thead><tbody>';
+        scannedProducts.forEach(p => {
+            productHtml += `<tr><td>${p.name}</td><td>${p.spec || '-'}</td><td>${p.quantity} ${p.unit}</td><td>${p.selectedBatch}</td></tr>`;
+        });
+        productHtml += '</tbody></table>';
+        $('#confirmProductList').html(productHtml);
+        $('#outboundPlatformSelect').val('红书');
+        $('#outboundPlatformManual').addClass('d-none').val('');
+        $('#outboundRemarkSelect').val('样品');
+        $('#outboundRemarkManual').addClass('d-none').val('');
+        const confirmModal = new bootstrap.Modal(document.getElementById('confirmOutboundModal'));
+        confirmModal.show();
+    }
+
+    function submitOutboundWithRemark() {
+        const platformSelect = $('#outboundPlatformSelect').val();
+        const platformManual = $('#outboundPlatformManual').val().trim();
+        let platform = platformSelect === 'other' ? (platformManual || '其它') : platformSelect;
+
+        const remarkSelect = $('#outboundRemarkSelect').val();
+        const remarkManual = $('#outboundRemarkManual').val().trim();
+        let remark = remarkSelect === 'other' ? (remarkManual || '其它') : remarkSelect;
+
+        const operator = $('#operator').val();
+
+        const payload = {
+            waybill_number: currentWaybill,
+            operator: operator,
+            remark: remark,
+            platform: platform,
+            items: scannedProducts.map(p => ({
+                product_id: p.id,
+                quantity: p.quantity,
+                batch_no: p.selectedBatch
+            }))
+        };
+        $.ajax({
+            url: '/api/stock/out_batch',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(payload),
+            success: function(res) {
+                alert(res.message);
+                scannedProducts = [];
+                currentWaybill = '';
+                $('#confirmOutboundModal').modal('hide');
+                $('#scannerModal').modal('hide');
+                location.reload();
+            },
+            error: function(xhr) {
+                alert('出库失败：' + (xhr.responseJSON?.message || xhr.statusText));
+            }
+        });
+    }
+
+    // 新增：删除批次库存（仅管理员可调用）
+    function deleteBatch(barcode, batchNo, currentStock) {
+        if (!confirm(`确定要删除批次 ${batchNo} 的全部库存（${currentStock}）吗？此操作不可恢复。`)) return;
+        $.get(`/api/product/${barcode}`, function(data) {
+            if (!data.success) { alert('产品不存在'); return; }
             const productId = data.data.id;
             $.ajax({
                 url: '/api/inventory/delete_batch',
                 type: 'POST',
                 contentType: 'application/json',
-                data: JSON.stringify({ product_id: productId, batch_no: batchNo }),
+                data: JSON.stringify({
+                    product_id: productId,
+                    batch_no: batchNo
+                }),
                 success: function(res) {
                     if (res.success) {
                         alert('删除成功');
@@ -423,154 +892,9 @@
         });
     }
 
-    // 打开手机扫码模式
-    function openModeSelect() {
-        // 检查是否为安全上下文（HTTPS或localhost）
-        if (!window.isSecureContext) {
-            alert('手机扫码功能需要HTTPS协议支持，请使用https://访问网站');
-            return;
-        }
-
-        // 检查浏览器是否支持摄像头
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            alert('您的浏览器不支持摄像头扫码功能，请使用最新版Chrome、Safari或Edge浏览器');
-            return;
-        }
-
-        // 显示扫码模态框
-        const modal = new bootstrap.Modal(document.getElementById('scanModal'));
-        modal.show();
-
-        // 模态框显示后启动摄像头
-        document.getElementById('scanModal').addEventListener('shown.bs.modal', function() {
-            startScanning();
-        }, { once: true });
-
-        // 模态框关闭时停止扫描
-        document.getElementById('scanModal').addEventListener('hidden.bs.modal', function() {
-            stopScanning();
-        }, { once: true });
-    }
-
-    // 启动摄像头扫描
-    async function startScanning() {
-        try {
-            // 隐藏错误提示
-            document.getElementById('cameraError').classList.add('d-none');
-
-            // 获取后置摄像头（优先）
-            videoStream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: 'environment', // 优先使用后置摄像头
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                }
-            });
-
-            const video = document.getElementById('scanVideo');
-            video.srcObject = videoStream;
-            await video.play();
-
-            scanning = true;
-            requestAnimationFrame(scanLoop);
-        } catch (err) {
-            console.error('后置摄像头启动失败:', err);
-
-            // 尝试使用前置摄像头
-            try {
-                videoStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'user' }
-                });
-                const video = document.getElementById('scanVideo');
-                video.srcObject = videoStream;
-                await video.play();
-                scanning = true;
-                requestAnimationFrame(scanLoop);
-            } catch (err2) {
-                console.error('前置摄像头也无法访问:', err2);
-                document.getElementById('cameraError').classList.remove('d-none');
-            }
-        }
-    }
-
-    // 停止扫描
-    function stopScanning() {
-        scanning = false;
-
-        if (animationFrameId) {
-            cancelAnimationFrame(animationFrameId);
-            animationFrameId = null;
-        }
-
-        if (videoStream) {
-            videoStream.getTracks().forEach(track => track.stop());
-            videoStream = null;
-        }
-
-        const video = document.getElementById('scanVideo');
-        if (video.srcObject) {
-            video.srcObject = null;
-        }
-    }
-
-    // 扫描循环
-    function scanLoop() {
-        if (!scanning) return;
-
-        const video = document.getElementById('scanVideo');
-        const canvas = document.getElementById('scanCanvas');
-        const ctx = canvas.getContext('2d');
-
-        // 确保视频已加载
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
-            // 设置canvas尺寸与视频一致
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-
-            // 将视频帧绘制到canvas
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-            // 获取图像数据
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-            // 解析二维码
-            const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                inversionAttempts: 'dontInvert'
-            });
-
-            if (code) {
-                // 扫描成功
-                handleScanResult(code.data);
-                return;
-            }
-        }
-
-        // 继续下一帧
-        animationFrameId = requestAnimationFrame(scanLoop);
-    }
-
-    // 处理扫描结果
-    function handleScanResult(barcode) {
-        // 停止扫描
-        stopScanning();
-
-        // 关闭模态框
-        const modal = bootstrap.Modal.getInstance(document.getElementById('scanModal'));
-        modal.hide();
-
-        // 将扫描结果填入输入框并自动查询
-        document.getElementById('barcodeInput').value = barcode.trim();
-        searchProduct();
-
-        // 震动提示（手机支持的话）
-        if (navigator.vibrate) {
-            navigator.vibrate(200);
-        }
-    }
-
-    // 页面加载完成后自动聚焦输入框
-    window.onload = function() {
-        document.getElementById('barcodeInput').focus();
-    };
+    // 扫码模态框显示时自动启动摄像头
+    $('#scannerModal').on('shown.bs.modal', function() {
+        setTimeout(openScanner, 300);
+    });
 </script>
 {% endblock %}
