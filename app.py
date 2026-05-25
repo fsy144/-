@@ -116,6 +116,7 @@ def login():
             session['user_id'] = user.id
             session['username'] = user.username
             session['role'] = user.role
+            session['avatar'] = user.avatar_path or ''
             return redirect(url_for('index'))
         else:
             return render_template('login.html', error='用户名或密码错误')
@@ -137,6 +138,7 @@ def register():
         session['user_id'] = user.id
         session['username'] = user.username
         session['role'] = user.role
+        session['avatar'] = ''
         return redirect(url_for('index'))
     return render_template('register.html')
 
@@ -164,6 +166,7 @@ def upload_avatar():
     file.save(filepath)
     user.avatar_path = f'avatars/{filename}'
     db.session.commit()
+    session['avatar'] = user.avatar_path
     return jsonify({'success': True, 'avatar_url': url_for('static', filename=user.avatar_path)})
 
 # ---------- 工作台 ----------
