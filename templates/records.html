@@ -130,18 +130,23 @@
             </div>
             <div class="modal-body">
                 <p class="text-muted">请选择要导出的列（默认全选）：</p>
+                <div class="mb-3">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="selectAllBtn" onclick="toggleSelectAll()">取消全选</button>
+                </div>
                 <form id="exportForm">
-                    {% set all_fields = ['操作时间', '产品条码', '产品名称', '规格', '数量'] %}
-                    {% if record_type == 'out' %}
-                        {% set all_fields = all_fields + ['运单号'] %}
-                    {% endif %}
-                    {% set all_fields = all_fields + ['批次号', '生产日期', '到期日期', '平台', '操作人', '备注'] %}
-                    {% for field in all_fields %}
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" name="fields" value="{{ field }}" id="field_{{ loop.index }}" checked>
-                        <label class="form-check-label" for="field_{{ loop.index }}">{{ field }}</label>
+                    <div class="d-flex flex-wrap">
+                        {% set all_fields = ['操作时间', '产品条码', '产品名称', '规格', '数量'] %}
+                        {% if record_type == 'out' %}
+                            {% set all_fields = all_fields + ['运单号'] %}
+                        {% endif %}
+                        {% set all_fields = all_fields + ['批次号', '生产日期', '到期日期', '平台', '操作人', '备注'] %}
+                        {% for field in all_fields %}
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input export-field-check" type="checkbox" name="fields" value="{{ field }}" id="field_{{ loop.index }}" checked>
+                            <label class="form-check-label" for="field_{{ loop.index }}">{{ field }}</label>
+                        </div>
+                        {% endfor %}
                     </div>
-                    {% endfor %}
                 </form>
             </div>
             <div class="modal-footer">
@@ -155,22 +160,37 @@
 
 {% block extra_js %}
 <script>
+    // 全选/取消全选切换
+    function toggleSelectAll() {
+        const checks = document.querySelectorAll('.export-field-check');
+        const allChecked = Array.from(checks).every(c => c.checked);
+        const newState = !allChecked;
+        checks.forEach(c => c.checked = newState);
+        document.getElementById('selectAllBtn').textContent = newState ? '取消全选' : '全选';
+    }
+
+    // 提交导出
     function submitExport() {
-        var formData = $('#exportForm').serialize();
-        // 动态创建form提交
         var tempForm = $('<form>', {
             'method': 'POST',
             'action': '/records/{{ record_type }}/download',
             'target': '_blank'
         });
-        var fields = $('#exportForm input[name="fields"]:checked').map(function() {
+        var checkedFields = $('.export-field-check:checked').map(function() {
             return '<input type="hidden" name="fields" value="' + $(this).val() + '">';
         }).get().join('');
-        tempForm.append(fields);
+        tempForm.append(checkedFields);
         $('body').append(tempForm);
         tempForm.submit();
         tempForm.remove();
         $('#exportModal').modal('hide');
     }
+
+    // 初始化按钮文字（默认全选，显示"取消全选"）
+    $(function() {
+        const checks = document.querySelectorAll('.export-field-check');
+        const allChecked = Array.from(checks).every(c => c.checked);
+        document.getElementById('selectAllBtn').textContent = allChecked ? '取消全选' : '全选';
+    });
 </script>
 {% endblock %}
