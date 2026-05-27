@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}员工管理 - 库存管理系统{% endblock %}
+{% block page_title %}员工管理{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <i class="fa fa-users"></i> 员工管理
+    </div>
+    <div class="card-body">
+        <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#addUserModal">添加员工</button>
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>用户名</th>
+                    <th>角色</th>
+                    <th>权限</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="userTableBody">
+                <!-- 由JS动态填充 -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 添加用户模态框 -->
+<div class="modal fade" id="addUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加员工</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addUserForm">
+                    <div class="mb-3">
+                        <label>用户名</label>
+                        <input type="text" id="newUsername" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label>密码</label>
+                        <input type="password" id="newPassword" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label>角色</label>
+                        <select id="newRole" class="form-select">
+                            <option value="user">普通员工</option>
+                            <option value="admin">管理员</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label>权限（多选）</label>
+                        <select id="newPermissions" class="form-select" multiple size="4">
+                            <option value="delete">删除数据</option>
+                            <option value="manage_users">员工管理</option>
+                            <option value="adjust">库存调整</option>
+                        </select>
+                        <small class="text-muted">按住 Ctrl/Cmd 可多选</small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="addUser()">确认添加</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑权限模态框 -->
+<div class="modal fade" id="editUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">编辑员工权限</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editUserId">
+                <div class="mb-3">
+                    <label>角色</label>
+                    <select id="editRole" class="form-select">
+                        <option value="user">普通员工</option>
+                        <option value="admin">管理员</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label>权限</label>
+                    <select id="editPermissions" class="form-select" multiple size="4">
+                        <option value="delete">删除数据</option>
+                        <option value="manage_users">员工管理</option>
+                        <option value="adjust">库存调整</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveUser()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function loadUsers() {
+        $.get('/api/admin/users', function(res) {
+            if (res.success) {
+                let html = '';
+                res.users.forEach(u => {
+                    html += `<tr>
+                        <td>${u.username}</td>
+                        <td>${u.role === 'admin' ? '管理员' : '员工'}</td>
+                        <td>${u.permissions || '-'}</td>
+                        <td>
+                            <button class="btn btn-sm btn-warning" onclick="editUser(${u.id}, '${u.role}', '${u.permissions}')">编辑</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id})">删除</button>
+                        </td>
+                    </tr>`;
+                });
+                $('#userTableBody').html(html);
+            }
+        });
+    }
+
+    function addUser() {
+        const data = {
+            username: $('#newUsername').val(),
+            password: $('#newPassword').val(),
+            role: $('#newRole').val(),
+            permissions: $('#newPermissions').val() ? $('#newPermissions').val().join(',') : ''
+        };
+        $.post('/api/admin/users', data, function(res) {
+            if (res.success) {
+                alert('用户添加成功');
+                $('#addUserModal').modal('hide');
+                loadUsers();
+            } else {
+                alert(res.message);
+            }
+        });
+    }
+
+    function editUser(id, role, permissions) {
+        $('#editUserId').val(id);
+        $('#editRole').val(role);
+        // 设置多选值
+        const perms = permissions ? permissions.split(',') : [];
+        $('#editPermissions').val(perms);
+        const modal = new bootstrap.Modal(document.getElementById('editUserModal'));
+        modal.show();
+    }
+
+    function saveUser() {
+        const id = $('#editUserId').val();
+        const data = {
+            role: $('#editRole').val(),
+            permissions: $('#editPermissions').val() ? $('#editPermissions').val().join(',') : ''
+        };
+        $.ajax({
+            url: '/api/admin/users/' + id,
+            type: 'PUT',
+            data: data,
+            success: function(res) {
+                if (res.success) {
+                    alert('权限更新成功');
+                    $('#editUserModal').modal('hide');
+                    loadUsers();
+                } else {
+                    alert(res.message);
+                }
+            }
+        });
+    }
+
+    function deleteUser(id) {
+        if (!confirm('确定删除该用户吗？')) return;
+        $.ajax({
+            url: '/api/admin/users/' + id,
+            type: 'DELETE',
+            success: function(res) {
+                if (res.success) {
+                    alert('用户已删除');
+                    loadUsers();
+                } else {
+                    alert(res.message);
+                }
+            }
+        });
+    }
+
+    $(document).ready(function() {
+        loadUsers();
+    });
+</script>
+{% endblock %}

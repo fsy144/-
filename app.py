@@ -19,12 +19,13 @@ os.makedirs(os.path.join(app.static_folder, 'avatars'), exist_ok=True)
 
 db = SQLAlchemy(app)
 
-# ---------- 用户模型（增加角色）----------
+# ---------- 用户模型（增加权限字段）----------
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
-    role = db.Column(db.String(20), default='user')  # 'admin' or 'user'
+    role = db.Column(db.String(20), default='user')          # 'admin' 或 'user'
+    permissions = db.Column(db.String(200), default='')      # 逗号分隔的权限，如 'delete,manage_users,adjust'
     avatar_path = db.Column(db.String(200), default='')
 
     def set_password(self, password):
@@ -33,8 +34,13 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
-    def is_admin(self):
-        return self.role == 'admin'
+    def has_permission(self, permission):
+        if self.role == 'admin':
+            return True
+        if self.permissions:
+            perms = [p.strip() for p in self.permissions.split(',')]
+            return permission in perms
+        return False
 
 # ---------- 产品模型 ----------
 class Product(db.Model):
@@ -69,10 +75,10 @@ class StockRecord(db.Model):
 
 with app.app_context():
     db.create_all()
-    # 如果没有管理员，创建一个默认管理员
+    # 如果没有管理员，创建默认管理员
     if not User.query.filter_by(username='admin').first():
-        admin = User(username='admin', role='admin')
-        admin.set_password('admin123')  # 请尽快修改
+        admin = User(username='admin', role='admin', permissions='delete,manage_users,adjust')
+        admin.set_password('admin123')
         db.session.add(admin)
         db.session.commit()
     print("✅ 数据库初始化成功！")
@@ -86,20 +92,25 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-def admin_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            return redirect(url_for('login'))
-        user = User.query.get(session['user_id'])
-        if not user or not user.is_admin():
-            return jsonify({'success': False, 'message': '需要管理员权限'}), 403
-        return f(*args, **kwargs)
-    return decorated_function
+def permission_required(permission):
+    """检查当前用户是否拥有指定权限"""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                return redirect(url_for('login'))
+            user = User.query.get(session['user_id'])
+            if not user or not user.has_permission(permission):
+                if request.is_json:
+                    return jsonify({'success': False, 'message': '权限不足'}), 403
+                return render_template('error.html', message='您没有权限执行此操作'), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 
 @app.before_request
 def require_login():
-    allowed_endpoints = ['login', 'register', 'static']
+    allowed_endpoints = ['login', 'static']
     if request.endpoint in allowed_endpoints:
         return
     if 'user_id' not in session:
@@ -122,25 +133,10 @@ def login():
             return render_template('login.html', error='用户名或密码错误')
     return render_template('login.html')
 
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        username = request.form.get('username', '').strip()
-        password = request.form.get('password', '')
-        if not username or not password:
-            return render_template('register.html', error='用户名和密码不能为空')
-        if User.query.filter_by(username=username).first():
-            return render_template('register.html', error='用户名已存在')
-        user = User(username=username, role='user')
-        user.set_password(password)
-        db.session.add(user)
-        db.session.commit()
-        session['user_id'] = user.id
-        session['username'] = user.username
-        session['role'] = user.role
-        session['avatar'] = ''
-        return redirect(url_for('index'))
-    return render_template('register.html')
+# 已移除注册路由，只保留管理员通过员工管理添加用户
+@app.route('/register')
+def register_disabled():
+    return redirect(url_for('login'))
 
 @app.route('/logout')
 def logout():
@@ -193,19 +189,21 @@ def index():
 
     return render_template('index.html', inventory_rows=inventory_rows)
 
-# ---------- 记录页面 ----------
+# ---------- 记录页面（包含调整记录）----------
 @app.route('/records/<record_type>')
 def records(record_type):
     if record_type not in ['in', 'out']:
         return redirect(url_for('index'))
+
     if record_type == 'in':
-        records_list = StockRecord.query.filter_by(type='in').order_by(StockRecord.create_time.desc()).all()
+        records_list = StockRecord.query.filter(StockRecord.type.in_(['in', 'adjust_in'])).order_by(StockRecord.create_time.desc()).all()
     else:
-        records_list = StockRecord.query.filter_by(type='out', parent_id=None).order_by(StockRecord.create_time.desc()).all()
+        records_list = StockRecord.query.filter(StockRecord.type.in_(['out', 'adjust_out']), StockRecord.parent_id == None).order_by(StockRecord.create_time.desc()).all()
+
     title = '入库记录' if record_type == 'in' else '出库记录'
     return render_template('records.html', records=records_list, record_type=record_type, title=title)
 
-# ---------- 下载 Excel（支持字段选择）----------
+# ---------- 下载 Excel ----------
 @app.route('/records/<record_type>/download', methods=['POST'])
 def download_records(record_type):
     if record_type not in ['in', 'out']:
@@ -216,13 +214,12 @@ def download_records(record_type):
         return '未选择字段', 400
 
     if record_type == 'in':
-        records_list = StockRecord.query.filter_by(type='in').order_by(StockRecord.create_time.desc()).all()
+        records_list = StockRecord.query.filter(StockRecord.type.in_(['in', 'adjust_in'])).order_by(StockRecord.create_time.desc()).all()
         filename = '入库记录.xlsx'
     else:
-        records_list = StockRecord.query.filter_by(type='out', parent_id=None).order_by(StockRecord.create_time.desc()).all()
+        records_list = StockRecord.query.filter(StockRecord.type.in_(['out', 'adjust_out']), StockRecord.parent_id == None).order_by(StockRecord.create_time.desc()).all()
         filename = '出库记录.xlsx'
 
-    # 所有可用字段及对应数据提取函数
     field_defs = {
         '操作时间': lambda r: r.create_time.strftime('%Y-%m-%d %H:%M:%S') if r.create_time else '',
         '产品条码': lambda r: r.product.barcode if r.product else '',
@@ -277,6 +274,61 @@ def download_records(record_type):
 @app.route('/inventory')
 def inventory_page():
     return render_template('inventory.html')
+
+# ---------- 员工管理（仅管理员）----------
+@app.route('/admin/users')
+@permission_required('manage_users')
+def users_management():
+    return render_template('users_management.html')
+
+# API: 获取用户列表
+@app.route('/api/admin/users')
+@permission_required('manage_users')
+def get_users():
+    users = User.query.all()
+    data = [{'id': u.id, 'username': u.username, 'role': u.role, 'permissions': u.permissions} for u in users]
+    return jsonify({'success': True, 'users': data})
+
+# API: 添加用户
+@app.route('/api/admin/users', methods=['POST'])
+@permission_required('manage_users')
+def add_user():
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '')
+    role = request.form.get('role', 'user')
+    permissions = request.form.get('permissions', '')
+    if not username or not password:
+        return jsonify({'success': False, 'message': '用户名和密码不能为空'})
+    if User.query.filter_by(username=username).first():
+        return jsonify({'success': False, 'message': '用户名已存在'})
+    user = User(username=username, role=role, permissions=permissions)
+    user.set_password(password)
+    db.session.add(user)
+    db.session.commit()
+    return jsonify({'success': True, 'message': '用户添加成功'})
+
+# API: 更新用户权限
+@app.route('/api/admin/users/<int:user_id>', methods=['PUT'])
+@permission_required('manage_users')
+def update_user(user_id):
+    user = User.query.get_or_404(user_id)
+    role = request.form.get('role', user.role)
+    permissions = request.form.get('permissions', user.permissions)
+    user.role = role
+    user.permissions = permissions
+    db.session.commit()
+    return jsonify({'success': True, 'message': '用户权限更新成功'})
+
+# API: 删除用户
+@app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@permission_required('manage_users')
+def delete_user(user_id):
+    if user_id == session['user_id']:
+        return jsonify({'success': False, 'message': '不能删除自己'})
+    user = User.query.get_or_404(user_id)
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'success': True, 'message': '用户已删除'})
 
 # ---------- 产品 API ----------
 @app.route('/api/product/<barcode>')
@@ -388,7 +440,6 @@ def stock_in():
     try:
         product_id = request.form.get('product_id')
         quantity = int(request.form.get('quantity', 1))
-        # 操作人强制使用当前登录用户名
         operator = session.get('username', '未知')
         remark = request.form.get('remark', '')
         batch_no = request.form.get('batch_no', '')
@@ -585,7 +636,7 @@ def adjust_inventory():
             type=record_type,
             quantity=quantity,
             operator=operator,
-            remark=remark,
+            remark='库存调整：' + remark,
             batch_no=batch_no,
             production_date=production_date,
             expiry_date=expiry_date
@@ -599,9 +650,9 @@ def adjust_inventory():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'调整失败：{str(e)}'})
 
-# ---------- 删除批次库存（仅管理员）----------
+# ---------- 删除批次（需 delete 权限）----------
 @app.route('/api/inventory/delete_batch', methods=['POST'])
-@admin_required
+@permission_required('delete')
 def delete_batch_inventory():
     try:
         data = request.get_json()
@@ -614,13 +665,13 @@ def delete_batch_inventory():
 
         product = Product.query.get_or_404(product_id)
 
-        # 1. 删除该产品下该批次的所有库存记录（硬删除）
+        # 删除该产品下该批次的所有记录
         StockRecord.query.filter_by(product_id=product_id, batch_no=batch_no).delete()
-        # 2. 删除产品本身
+        # 删除产品本身
         db.session.delete(product)
         db.session.commit()
 
-        return jsonify({'success': True, 'message': f'已永久删除产品「{product.name}」及其批次「{batch_no}」的所有数据'})
+        return jsonify({'success': True, 'message': f'已永久删除产品「{product.name}」及其批次「{batch_no}」'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': f'删除失败：{str(e)}'})
