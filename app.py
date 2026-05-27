@@ -93,7 +93,6 @@ def login_required(f):
     return decorated_function
 
 def permission_required(permission):
-    """检查当前用户是否拥有指定权限"""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -103,7 +102,8 @@ def permission_required(permission):
             if not user or not user.has_permission(permission):
                 if request.is_json:
                     return jsonify({'success': False, 'message': '权限不足'}), 403
-                return render_template('error.html', message='您没有权限执行此操作'), 403
+                # 返回友好的错误页面
+                return render_template('error.html', message='您没有权限访问此页面，请联系管理员。'), 403
             return f(*args, **kwargs)
         return decorated_function
     return decorator
