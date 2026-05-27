@@ -128,6 +128,7 @@ def login():
             session['username'] = user.username
             session['role'] = user.role
             session['avatar'] = user.avatar_path or ''
+            session['permissions'] = user.permissions or ''
             return redirect(url_for('index'))
         else:
             return render_template('login.html', error='用户名或密码错误')
@@ -150,6 +151,7 @@ def register():
         session['username'] = user.username
         session['role'] = user.role
         session['avatar'] = ''
+        session['permissions'] = user.permissions or ''
         return redirect(url_for('index'))
     return render_template('register.html')
 
@@ -202,7 +204,13 @@ def index():
         func.coalesce(batch_stock_subq.c.net_stock, 0).label('batch_stock')
     ).outerjoin(batch_stock_subq, Product.id == batch_stock_subq.c.product_id).all()
 
-    return render_template('index.html', inventory_rows=inventory_rows)
+    # 获取当前用户的删除权限
+    user = None
+    if 'user_id' in session:
+        user = User.query.get(session['user_id'])
+    can_delete = user.has_permission('delete') if user else False
+
+    return render_template('index.html', inventory_rows=inventory_rows, can_delete=can_delete)
 
 # ---------- 记录页面（包含调整记录）----------
 @app.route('/records/<record_type>')
