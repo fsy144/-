@@ -133,10 +133,25 @@ def login():
             return render_template('login.html', error='用户名或密码错误')
     return render_template('login.html')
 
-# 已移除注册路由，只保留管理员通过员工管理添加用户
-@app.route('/register')
-def register_disabled():
-    return redirect(url_for('login'))
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        if not username or not password:
+            return render_template('register.html', error='用户名和密码不能为空')
+        if User.query.filter_by(username=username).first():
+            return render_template('register.html', error='用户名已存在')
+        user = User(username=username, role='user')
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        session['user_id'] = user.id
+        session['username'] = user.username
+        session['role'] = user.role
+        session['avatar'] = ''
+        return redirect(url_for('index'))
+    return render_template('register.html')
 
 @app.route('/logout')
 def logout():
