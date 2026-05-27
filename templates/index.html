@@ -860,32 +860,40 @@
     }
 
     // 新增：删除批次库存（仅管理员可调用）
+    // 删除批次（永久删除产品及所有记录）
     function deleteBatch(barcode, batchNo, currentStock) {
-        if (!confirm(`确定要删除批次 ${batchNo} 的全部库存（${currentStock}）吗？此操作不可恢复。`)) return;
+        // 先获取产品名称，用于确认提示
         $.get(`/api/product/${barcode}`, function(data) {
-            if (!data.success) { alert('产品不存在'); return; }
-            const productId = data.data.id;
-            $.ajax({
-                url: '/api/inventory/delete_batch',
-                type: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({
-                    product_id: productId,
-                    batch_no: batchNo
-                }),
-                success: function(res) {
-                    if (res.success) {
-                        alert('删除成功');
-                        location.reload();
-                    } else {
-                        alert('删除失败：' + res.message);
-                    }
-                },
-                error: function(xhr) {
-                    if (xhr.status == 403) {
-                        alert('需要管理员权限');
-                    } else {
-                        alert('请求失败');
+            if (!data.success) {
+            alert('产品不存在');
+            return;
+        }
+        const productName = data.data.name;
+        if (!confirm(`确定要永久删除产品「${productName}」的批次「${batchNo}」吗？\n\n⚠️ 此操作将同时删除该产品本身及其所有库存记录，不可恢复！`)) {
+            return;
+        }
+
+        $.ajax({
+            url: '/api/inventory/delete_batch',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                product_id: data.data.id,
+                batch_no: batchNo
+            }),
+            success: function(res) {
+                if (res.success) {
+                    alert('删除成功！');
+                    location.reload();
+                } else {
+                    alert('删除失败：' + res.message);
+                }
+            },
+            error: function(xhr) {
+                if (xhr.status === 403) {
+                    alert('需要管理员权限');
+                } else {
+                    alert('请求失败');
                     }
                 }
             });

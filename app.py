@@ -612,35 +612,15 @@ def delete_batch_inventory():
         if not product_id or not batch_no:
             return jsonify({'success': False, 'message': '参数不完整'})
 
-        from sqlalchemy import case, func
-        net_stock = db.session.query(
-            func.sum(case(
-                (StockRecord.type.in_(['in', 'adjust_in']), StockRecord.quantity),
-                (StockRecord.type.in_(['out', 'adjust_out']), -StockRecord.quantity),
-                else_=0
-            ))
-        ).filter(
-            StockRecord.product_id == product_id,
-            StockRecord.batch_no == batch_no
-        ).scalar() or 0
-
-        if net_stock <= 0:
-            return jsonify({'success': False, 'message': '该批次库存已为0'})
-
         product = Product.query.get_or_404(product_id)
-        record = StockRecord(
-            product_id=product_id,
-            type='adjust_out',
-            quantity=net_stock,
-            operator=operator,
-            remark=f'管理员删除批次 {batch_no} 库存',
-            batch_no=batch_no
-        )
-        product.stock -= net_stock
-        db.session.add(record)
+
+        # 1. 删除该产品下该批次的所有库存记录（硬删除）
+        StockRecord.query.filter_by(product_id=product_id, batch_no=batch_no).delete()
+        # 2. 删除产品本身
+        db.session.delete(product)
         db.session.commit()
 
-        return jsonify({'success': True, 'message': f'已删除批次 {batch_no} 的 {net_stock} 件库存'})
+        return jsonify({'success': True, 'message': f'已永久删除产品「{product.name}」及其批次「{batch_no}」的所有数据'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': f'删除失败：{str(e)}'})
