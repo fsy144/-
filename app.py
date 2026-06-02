@@ -296,7 +296,7 @@ def download_records(record_type):
 # ---------- 库存管理页面 ----------
 @app.route('/inventory')
 def inventory_page():
-    # 获取当前用户的 adjust 权限
+
     user = User.query.get(session.get('user_id'))
     can_adjust = user.has_permission('adjust') if user else False
     return render_template('inventory.html', can_adjust=can_adjust)
