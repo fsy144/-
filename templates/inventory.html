@@ -66,8 +66,9 @@
 
 {% block extra_js %}
 <script>
-    / 从后端传入的权限标志
+    // 从后端传入的权限标志（修复注释错误）
     var can_adjust = {{ 'true' if can_adjust else 'false' }};
+
     $(document).ready(function() {
         loadAllInventory();
     });
