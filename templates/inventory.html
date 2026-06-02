@@ -66,6 +66,8 @@
 
 {% block extra_js %}
 <script>
+    / 从后端传入的权限标志
+    var can_adjust = {{ 'true' if can_adjust else 'false' }};
     $(document).ready(function() {
         loadAllInventory();
     });
@@ -109,6 +111,10 @@
     }
 
     $('#adjustSubmit').on('click', function() {
+        if (!can_adjust) {
+            alert('您没有库存调整权限，请联系管理员');
+            return;
+        }
         const barcode = $('#adjustBarcode').val().trim();
         const batch = $('#adjustBatch').val().trim();
         if (!barcode) { alert('请输入产品条码'); return; }
