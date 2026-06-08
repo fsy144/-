@@ -12,13 +12,18 @@
     </div>
     <div class="card-body">
         <div class="row">
-            <div class="col-md-8">
+            <div class="col-md-10">
                 <div class="input-group input-group-lg mb-3">
                     <input type="text" id="barcodeInput" class="form-control"
-                           placeholder="请用扫码枪扫描条码或点击手机扫码" autofocus>
+                           placeholder="请用扫码枪扫描条码或点击手机扫码" autofocus
+                           style="ime-mode: disabled;" inputmode="numeric">
                     <button class="btn btn-primary" onclick="searchProduct()">查询</button>
                     <button class="btn btn-success" onclick="openModeSelect()">
                         <i class="fa fa-mobile"></i> 手机扫码
+                    </button>
+                    <!-- 扫码枪快速模式切换按钮 -->
+                    <button class="btn btn-outline-warning" id="modeToggleBtn" onclick="toggleQuickMode()">
+                        <i class="fa fa-bolt"></i> 普通模式
                     </button>
                 </div>
             </div>
@@ -192,7 +197,8 @@
                 <div class="mb-3">
                     <div class="input-group">
                         <input type="text" id="waybillNumber" class="form-control form-control-lg"
-                               placeholder="请输入运单号或扫描运单条码" autofocus>
+                               placeholder="请输入运单号或用扫码枪扫描运单条码" autofocus
+                               style="ime-mode: disabled;" inputmode="numeric">
                         <button class="btn btn-outline-secondary" type="button" onclick="toggleWaybillScan()">
                             <i class="fa fa-qrcode"></i> 扫码
                         </button>
@@ -210,7 +216,7 @@
     </div>
 </div>
 
-<!-- 手机扫码模态框 -->
+<!-- 手机扫码模态框（新增手动输入条码区域） -->
 <div class="modal fade" id="scannerModal" tabindex="-1" aria-labelledby="scannerModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
@@ -222,6 +228,14 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                <!-- 新增：手动输入条码+扫码枪支持区域 -->
+                <div class="input-group mb-3">
+                    <input type="text" id="modalBarcodeInput" class="form-control"
+                           placeholder="扫码枪扫描条码或手动输入"
+                           style="ime-mode: disabled;" inputmode="numeric">
+                    <button class="btn btn-primary" onclick="submitModalBarcode()">确认</button>
+                </div>
+
                 <video id="scannerVideo" width="100%" autoplay playsinline muted></video>
                 <div class="text-center mt-2 text-muted">请将条码对准摄像头</div>
 
@@ -344,7 +358,8 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.0/umd/index.min.js"></script>
+<!-- 替换为国内可访问的CDN地址 -->
+<script src="https://unpkg.com/@zxing/library@0.21.0/umd/index.min.js"></script>
 
 <script>
     let currentMode = 'in';
@@ -354,9 +369,12 @@
     let waybillCodeReader = null;
     let currentScannedProduct = null;
 
-    // 新增：10秒扫码冷却机制（防重复识别）
+    // 10秒扫码冷却机制（防重复识别）
     const barcodeCooldown = new Map();
     const COOLDOWN_TIME = 10000;
+
+    // 扫码枪快速入库模式
+    let quickInMode = false;
 
     // 页面加载完成后初始化
     $(document).ready(function() {
@@ -374,11 +392,41 @@
             stopWaybillScanner();
         });
 
-        // 扫码枪输入监听
+        // 扫码枪输入监听（主页面）
         $('#barcodeInput').on('keypress', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 searchProduct();
+            }
+        });
+
+        // 扫码枪输入监听（模态框内）
+        $(document).on('keypress', '#modalBarcodeInput', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                submitModalBarcode();
+            }
+        });
+
+        // 扫码枪自动永久聚焦主输入框
+        setInterval(() => {
+            const barcodeInput = document.getElementById('barcodeInput');
+            const activeElement = document.activeElement;
+            if (!activeElement ||
+                (activeElement.tagName !== 'INPUT' &&
+                 activeElement.tagName !== 'SELECT' &&
+                 activeElement.tagName !== 'TEXTAREA')) {
+                barcodeInput.focus();
+            }
+        }, 100);
+
+        // 点击空白处自动聚焦
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('button') &&
+                !e.target.closest('input') &&
+                !e.target.closest('select') &&
+                !e.target.closest('a')) {
+                document.getElementById('barcodeInput').focus();
             }
         });
 
@@ -393,6 +441,25 @@
         }, 60000);
     });
 
+    // 切换扫码枪快速入库模式
+    function toggleQuickMode() {
+        quickInMode = !quickInMode;
+        const btn = document.getElementById('modeToggleBtn');
+
+        if (quickInMode) {
+            btn.classList.remove('btn-outline-warning');
+            btn.classList.add('btn-warning');
+            btn.innerHTML = '<i class="fa fa-bolt"></i> 快速入库模式';
+            $('#barcodeInput').val('').focus();
+            alert('已进入快速入库模式：扫描条码直接弹出入库表单');
+        } else {
+            btn.classList.remove('btn-warning');
+            btn.classList.add('btn-outline-warning');
+            btn.innerHTML = '<i class="fa fa-bolt"></i> 普通模式';
+            $('#barcodeInput').val('').focus();
+        }
+    }
+
     function searchProduct() {
         const barcode = $('#barcodeInput').val().trim();
         if (!barcode) return;
@@ -400,6 +467,26 @@
         $.get(`/api/product/${barcode}`, function(data) {
             if (data.success) {
                 const product = data.data;
+
+                // 快速入库模式：直接弹出快速入库表单
+                if (quickInMode) {
+                    currentScannedProduct = product;
+                    $('#quickInProductId').val(product.id);
+                    $('#quickInProductName').text(`产品：${product.name}${product.spec ? ' (' + product.spec + ')' : ''}`);
+                    $('#quickInQuantity').val(1);
+                    $('#quickInBatchNo').val('');
+                    $('#quickInProductionDate').val('');
+                    $('#quickInExpiryDate').val('');
+                    $('#quickInPlatform').val('红书');
+                    $('#quickInRemark').val('退货');
+                    const quickInModal = new bootstrap.Modal(document.getElementById('quickInModal'));
+                    quickInModal.show();
+
+                    $('#barcodeInput').val('').focus();
+                    return;
+                }
+
+                // 普通模式：显示产品信息
                 $('#productId').val(product.id);
                 $('#productName').text(`名称：${product.name}${product.spec ? ' (' + product.spec + ')' : ''}`);
                 $('#productStock').text(`当前库存：${product.stock} ${product.unit}`);
@@ -566,11 +653,22 @@
             $('#waybillScanArea').addClass('d-none');
             stopWaybillScanner();
         } else {
-            $('#scanModeText').text('扫码入库');
-            $('#waybillDisplay').text('');
-            $('#outboundList').addClass('d-none');
-            const scannerModal = new bootstrap.Modal(document.getElementById('scannerModal'));
-            scannerModal.show();
+            // 入库模式：询问使用扫码枪还是手机扫码
+            if (confirm('是否使用扫码枪快速入库？\n\n✅ 确定：扫码枪直接在主页面快速入库\n❌ 取消：使用手机摄像头扫码')) {
+                // 进入扫码枪快速入库模式
+                quickInMode = true;
+                $('#modeToggleBtn').removeClass('btn-outline-warning').addClass('btn-warning');
+                $('#modeToggleBtn').html('<i class="fa fa-bolt"></i> 快速入库模式');
+                alert('已进入扫码枪快速入库模式\n直接用扫码枪扫描条码即可弹出入库表单');
+                $('#barcodeInput').val('').focus();
+            } else {
+                // 手机扫码模式
+                $('#scanModeText').text('扫码入库');
+                $('#waybillDisplay').text('');
+                $('#outboundList').addClass('d-none');
+                const scannerModal = new bootstrap.Modal(document.getElementById('scannerModal'));
+                scannerModal.show();
+            }
         }
     }
 
@@ -632,6 +730,32 @@
         updateScannedList();
         const scannerModal = new bootstrap.Modal(document.getElementById('scannerModal'));
         scannerModal.show();
+
+        // 自动聚焦到模态框内的条码输入框，扫码枪直接可用
+        setTimeout(() => {
+            document.getElementById('modalBarcodeInput').focus();
+        }, 500);
+    }
+
+    // ✅ 新增：处理模态框内的条码输入（扫码枪+手动）
+    function submitModalBarcode() {
+        const barcode = $('#modalBarcodeInput').val().trim();
+        if (!barcode) return;
+
+        // 冷却机制：10秒内不重复识别同一条码
+        const now = Date.now();
+        if (barcodeCooldown.has(barcode) && now - barcodeCooldown.get(barcode) < COOLDOWN_TIME) {
+            $('#modalBarcodeInput').val('').focus();
+            return;
+        }
+        barcodeCooldown.set(barcode, now);
+
+        // 复用原有的条码处理逻辑
+        handleScannedBarcode(barcode);
+        playBeep();
+
+        // 清空输入框，准备下一次扫描
+        $('#modalBarcodeInput').val('').focus();
     }
 
     function openScanner() {
@@ -747,13 +871,19 @@
                 alert(`${currentScannedProduct.name} 入库成功！当前库存：${res.current_stock}`);
                 $('#quickInModal').modal('hide');
                 currentScannedProduct = null;
+                // 提交成功后自动聚焦输入框，准备下一次扫描
+                if (quickInMode) {
+                    $('#barcodeInput').focus();
+                } else {
+                    $('#modalBarcodeInput').focus();
+                }
             } else {
                 alert(res.message);
             }
         });
     }
 
-    // ============== 核心修改：每次扫码生成独立条目，不合并 ==============
+    // 每次扫码生成独立条目，不合并、不累加
     function loadBatchesAndAdd(product) {
         $.get(`/api/product/${product.id}/batches`, function(res) {
             const batches = res.success ? res.batches : [];
@@ -761,7 +891,7 @@
                 alert(`产品 ${product.name} 暂无批次号，请先入库建立批次。`);
                 return;
             }
-            // 直接新增一条记录，永远不合并、不累加
+            // 直接新增一条记录
             scannedProducts.push({
                 id: product.id,
                 barcode: product.barcode || '',
@@ -819,15 +949,24 @@
             alert('请先扫描产品');
             return;
         }
-        for (let p of scannedProducts) {
-            if (!p.selectedBatch) {
-                alert(`产品 ${p.name} 未选择批次号，请选择后再确认出库。`);
+        for (let i = 0; i < scannedProducts.length; i++) {
+            const item = scannedProducts[i];
+            if (!item.selectedBatch) {
+                alert(`第${i+1}条记录（${item.name}）未选择批次号，请选择后再确认出库。`);
                 return;
             }
         }
-        let productHtml = '<table class="table table-sm"><thead><tr><th>产品名称</th><th>规格</th><th>数量</th><th>批次号</th></tr></thead><tbody>';
-        scannedProducts.forEach(p => {
-            productHtml += `<tr><td>${p.name}</td><td>${p.spec || '-'}</td><td>${p.quantity} ${p.unit}</td><td>${p.selectedBatch}</td></tr>`;
+        let productHtml = '<table class="table table-sm"><thead><tr><th>序号</th><th>产品名称</th><th>规格</th><th>数量</th><th>批次号</th></tr></thead><tbody>';
+        scannedProducts.forEach((p, i) => {
+            productHtml += `
+                <tr>
+                    <td>${i+1}</td>
+                    <td>${p.name}</td>
+                    <td>${p.spec || '-'}</td>
+                    <td>${p.quantity} ${p.unit}</td>
+                    <td>${p.selectedBatch}</td>
+                </tr>
+            `;
         });
         productHtml += '</tbody></table>';
         $('#confirmProductList').html(productHtml);
@@ -919,9 +1058,11 @@
         });
     }
 
-    // 扫码模态框显示时自动启动摄像头
+    // 扫码模态框显示时自动启动摄像头并聚焦输入框
     $('#scannerModal').on('shown.bs.modal', function() {
         setTimeout(openScanner, 300);
+        // 自动聚焦到模态框内的条码输入框
+        document.getElementById('modalBarcodeInput').focus();
     });
 </script>
 {% endblock %}
