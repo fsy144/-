@@ -53,8 +53,14 @@
 </div>
 
 <div class="card mt-3">
-    <div class="card-header">
-        <i class="fa fa-list"></i> 当前库存（按批次）
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fa fa-list"></i> 当前库存（按批次）</span>
+        <!-- ✅ 新增：筛选输入框和按钮（蓝色框位置） -->
+        <div class="input-group input-group-sm" style="width: 300px;">
+            <input type="text" id="inventoryFilter" class="form-control" placeholder="输入产品名称/条码/批次号筛选">
+            <button class="btn btn-primary" onclick="filterInventory()">筛选</button>
+            <button class="btn btn-outline-secondary" onclick="resetFilter()">重置</button>
+        </div>
     </div>
     <div class="card-body">
         <div class="table-responsive" id="inventoryTableContainer">
@@ -68,13 +74,26 @@
 <script>
     // 从后端传入的权限标志（修复注释错误）
     var can_adjust = {{ 'true' if can_adjust else 'false' }};
+    // ✅ 新增：保存原始库存数据用于筛选
+    let originalInventoryData = [];
 
     $(document).ready(function() {
         loadAllInventory();
+
+        // ✅ 新增：回车触发筛选
+        $('#inventoryFilter').on('keypress', function(e) {
+            if (e.key === 'Enter') {
+                filterInventory();
+            }
+        });
     });
 
     function loadAllInventory() {
         $.get('/api/inventory/search', { keyword: '' }, function(res) {
+            // ✅ 保存原始数据
+            if (res.success) {
+                originalInventoryData = res.data;
+            }
             renderInventoryTable(res);
         }).fail(function() {
             $('#inventoryTableContainer').html('<div class="alert alert-danger">加载库存失败，请稍后重试</div>');
@@ -88,10 +107,36 @@
             return;
         }
         $.get('/api/inventory/search', { keyword: keyword }, function(res) {
+            // ✅ 更新原始数据
+            if (res.success) {
+                originalInventoryData = res.data;
+            }
             renderInventoryTable(res);
         }).fail(function() {
             $('#inventoryTableContainer').html('<div class="alert alert-danger">查询失败</div>');
         });
+    }
+
+    // ✅ 新增：筛选库存函数
+    function filterInventory() {
+        const keyword = $('#inventoryFilter').val().trim().toLowerCase();
+        let filteredData = originalInventoryData;
+
+        if (keyword) {
+            filteredData = originalInventoryData.filter(item => {
+                return item.product_name.toLowerCase().includes(keyword) ||
+                       item.barcode.toLowerCase().includes(keyword) ||
+                       item.batch_no.toLowerCase().includes(keyword);
+            });
+        }
+
+        renderInventoryTable({ success: true, data: filteredData });
+    }
+
+    // ✅ 新增：重置筛选函数
+    function resetFilter() {
+        $('#inventoryFilter').val('');
+        renderInventoryTable({ success: true, data: originalInventoryData });
     }
 
     function renderInventoryTable(res) {
@@ -100,10 +145,23 @@
                 $('#inventoryTableContainer').html('<div class="alert alert-info">暂无库存数据</div>');
                 return;
             }
+
+            // ✅ 计算库存数量总和
+            let totalStock = 0;
+            res.data.forEach(item => {
+                totalStock += parseInt(item.stock) || 0;
+            });
+
             let html = '<table class="table table-bordered table-sm"><thead><tr><th>产品名称</th><th>条码</th><th>批次号</th><th>库存数量</th><th>单位</th></tr></thead><tbody>';
             res.data.forEach(item => {
                 html += `<tr><td>${item.product_name}</td><td>${item.barcode}</td><td>${item.batch_no}</td><td>${item.stock}</td><td>${item.unit}</td></tr>`;
             });
+            // ✅ 新增：总和行（红框位置）
+            html += `<tr class="table-primary fw-bold">
+                        <td colspan="3" class="text-end">合计：</td>
+                        <td>${totalStock}</td>
+                        <td>-</td>
+                    </tr>`;
             html += '</tbody></table>';
             $('#inventoryTableContainer').html(html);
         } else {
