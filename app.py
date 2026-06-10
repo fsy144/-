@@ -19,13 +19,12 @@ os.makedirs(os.path.join(app.static_folder, 'avatars'), exist_ok=True)
 
 db = SQLAlchemy(app)
 
-# ---------- 用户模型（增加权限字段）----------
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
-    role = db.Column(db.String(20), default='user')          # 'admin' 或 'user'
-    permissions = db.Column(db.String(200), default='')      # 逗号分隔的权限，如 'delete,manage_users,adjust'
+    role = db.Column(db.String(20), default='user')
+    permissions = db.Column(db.String(200), default='')
     avatar_path = db.Column(db.String(200), default='')
 
     def set_password(self, password):
@@ -42,7 +41,6 @@ class User(db.Model):
             return permission in perms
         return False
 
-# ---------- 产品模型 ----------
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     barcode = db.Column(db.String(50), unique=True, nullable=False)
@@ -53,7 +51,6 @@ class Product(db.Model):
     create_time = db.Column(db.DateTime, default=datetime.now)
     update_time = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
 
-# ---------- 库存记录模型 ----------
 class StockRecord(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
@@ -75,15 +72,13 @@ class StockRecord(db.Model):
 
 with app.app_context():
     db.create_all()
-    # 如果没有管理员，创建默认管理员
     if not User.query.filter_by(username='admin').first():
         admin = User(username='admin', role='admin', permissions='delete,manage_users,adjust')
-        admin.set_password('admin123')
+        admin.set_password('fsy824phatma')
         db.session.add(admin)
         db.session.commit()
     print("✅ 数据库初始化成功！")
 
-# ---------- 装饰器 ----------
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -102,7 +97,6 @@ def permission_required(permission):
             if not user or not user.has_permission(permission):
                 if request.is_json:
                     return jsonify({'success': False, 'message': '权限不足'}), 403
-                # 返回友好的错误页面
                 return render_template('error.html', message='您没有权限访问此页面，请联系管理员。'), 403
             return f(*args, **kwargs)
         return decorated_function
@@ -116,7 +110,6 @@ def require_login():
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
-# ---------- 认证路由 ----------
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -160,7 +153,6 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# ---------- 头像上传 ----------
 @app.route('/api/avatar/upload', methods=['POST'])
 def upload_avatar():
     if 'file' not in request.files:
@@ -182,7 +174,6 @@ def upload_avatar():
     session['avatar'] = user.avatar_path
     return jsonify({'success': True, 'avatar_url': url_for('static', filename=user.avatar_path)})
 
-# ---------- 工作台 ----------
 @app.route('/')
 def index():
     from sqlalchemy import case, func
@@ -204,7 +195,6 @@ def index():
         func.coalesce(batch_stock_subq.c.net_stock, 0).label('batch_stock')
     ).outerjoin(batch_stock_subq, Product.id == batch_stock_subq.c.product_id).all()
 
-    # 获取当前用户的删除权限
     user = None
     if 'user_id' in session:
         user = User.query.get(session['user_id'])
@@ -212,7 +202,6 @@ def index():
 
     return render_template('index.html', inventory_rows=inventory_rows, can_delete=can_delete)
 
-# ---------- 记录页面（包含调整记录）----------
 @app.route('/records/<record_type>')
 def records(record_type):
     if record_type not in ['in', 'out']:
@@ -226,7 +215,6 @@ def records(record_type):
     title = '入库记录' if record_type == 'in' else '出库记录'
     return render_template('records.html', records=records_list, record_type=record_type, title=title)
 
-# ---------- 下载 Excel ----------
 @app.route('/records/<record_type>/download', methods=['POST'])
 def download_records(record_type):
     if record_type not in ['in', 'out']:
@@ -293,21 +281,17 @@ def download_records(record_type):
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
 
-# ---------- 库存管理页面 ----------
 @app.route('/inventory')
 def inventory_page():
-    # 获取当前用户的 adjust 权限
     user = User.query.get(session.get('user_id'))
     can_adjust = user.has_permission('adjust') if user else False
     return render_template('inventory.html', can_adjust=can_adjust)
 
-# ---------- 员工管理（仅管理员）----------
 @app.route('/admin/users')
 @permission_required('manage_users')
 def users_management():
     return render_template('users_management.html')
 
-# API: 获取用户列表
 @app.route('/api/admin/users')
 @permission_required('manage_users')
 def get_users():
@@ -315,7 +299,6 @@ def get_users():
     data = [{'id': u.id, 'username': u.username, 'role': u.role, 'permissions': u.permissions} for u in users]
     return jsonify({'success': True, 'users': data})
 
-# API: 添加用户
 @app.route('/api/admin/users', methods=['POST'])
 @permission_required('manage_users')
 def add_user():
@@ -333,7 +316,6 @@ def add_user():
     db.session.commit()
     return jsonify({'success': True, 'message': '用户添加成功'})
 
-# API: 更新用户权限
 @app.route('/api/admin/users/<int:user_id>', methods=['PUT'])
 @permission_required('manage_users')
 def update_user(user_id):
@@ -345,7 +327,6 @@ def update_user(user_id):
     db.session.commit()
     return jsonify({'success': True, 'message': '用户权限更新成功'})
 
-# API: 删除用户
 @app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
 @permission_required('manage_users')
 def delete_user(user_id):
@@ -356,7 +337,6 @@ def delete_user(user_id):
     db.session.commit()
     return jsonify({'success': True, 'message': '用户已删除'})
 
-# ---------- 产品 API ----------
 @app.route('/api/product/<barcode>')
 def get_product(barcode):
     product = Product.query.filter_by(barcode=barcode).first()
@@ -376,16 +356,30 @@ def get_product(barcode):
 @app.route('/api/product/<int:product_id>/batches')
 def get_product_batches(product_id):
     product = Product.query.get_or_404(product_id)
-    from sqlalchemy import distinct
-    batches = db.session.query(distinct(StockRecord.batch_no)).filter(
+    from sqlalchemy import case, func
+
+    batch_stocks = db.session.query(
+        StockRecord.batch_no,
+        func.sum(case(
+            (StockRecord.type.in_(['in', 'adjust_in']), StockRecord.quantity),
+            (StockRecord.type.in_(['out', 'adjust_out']), -StockRecord.quantity),
+            else_=0
+        )).label('net_stock')
+    ).filter(
         StockRecord.product_id == product_id,
         StockRecord.batch_no.isnot(None),
         StockRecord.batch_no != ''
+    ).group_by(StockRecord.batch_no).having(
+        func.sum(case(
+            (StockRecord.type.in_(['in', 'adjust_in']), StockRecord.quantity),
+            (StockRecord.type.in_(['out', 'adjust_out']), -StockRecord.quantity),
+            else_=0
+        )) > 0
     ).all()
-    batch_list = [b[0] for b in batches]
+
+    batch_list = [b[0] for b in batch_stocks]
     return jsonify({'success': True, 'batches': batch_list})
 
-# ---------- 库存查询 API ----------
 @app.route('/api/inventory/search')
 def search_inventory():
     keyword = request.args.get('keyword', '').strip()
@@ -460,7 +454,6 @@ def search_inventory():
         } for pid, barcode, name, unit, batch, stock in results]
         return jsonify({'success': True, 'data': data})
 
-# ---------- 入库 API ----------
 @app.route('/api/stock/in', methods=['POST'])
 def stock_in():
     try:
@@ -497,7 +490,6 @@ def stock_in():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'入库失败：{str(e)}'})
 
-# ---------- 单条出库 API ----------
 @app.route('/api/stock/out', methods=['POST'])
 def stock_out():
     try:
@@ -551,7 +543,6 @@ def stock_out():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'出库失败：{str(e)}'})
 
-# ---------- 批量出库 API ----------
 @app.route('/api/stock/out_batch', methods=['POST'])
 def stock_out_batch():
     try:
@@ -626,7 +617,6 @@ def stock_out_batch():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'批量出库失败：{str(e)}'})
 
-# ---------- 库存调整 API ----------
 @app.route('/api/inventory/adjust', methods=['POST'])
 @permission_required('adjust')
 def adjust_inventory():
@@ -677,7 +667,6 @@ def adjust_inventory():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'调整失败：{str(e)}'})
 
-# ---------- 删除批次（需 delete 权限）----------
 @app.route('/api/inventory/delete_batch', methods=['POST'])
 @permission_required('delete')
 def delete_batch_inventory():
@@ -692,9 +681,7 @@ def delete_batch_inventory():
 
         product = Product.query.get_or_404(product_id)
 
-        # 删除该产品下该批次的所有记录
         StockRecord.query.filter_by(product_id=product_id, batch_no=batch_no).delete()
-        # 删除产品本身
         db.session.delete(product)
         db.session.commit()
 

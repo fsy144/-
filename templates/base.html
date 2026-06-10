@@ -56,7 +56,6 @@
 
 <div class="sidebar" id="sidebar">
     <div class="sidebar-header">库存管理系统</div>
-    <!-- 用户头像区域 -->
     <div class="sidebar-user" data-bs-toggle="dropdown" aria-expanded="false">
         {% if session.get('user_id') %}
         {% set user_avatar = url_for('static', filename=session.get('avatar', 'avatars/default.png')) %}
@@ -78,7 +77,6 @@
                 class="fa fa-camera"></i> 更换头像</a></li>
         <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="fa fa-sign-out"></i> 退出登录</a></li>
     </ul>
-    <!-- 隐藏的文件上传 -->
     <form id="avatarForm" style="display:none">
         <input type="file" id="avatarUpload" accept="image/*" onchange="uploadAvatar(this)">
     </form>
@@ -106,7 +104,6 @@
             <span class="menu-toggle" id="menuToggle"><i class="fa fa-bars"></i></span>
             <h5 class="mb-0">{% block page_title %}{% endblock %}</h5>
         </div>
-        <!-- 右上角不再显示用户信息，已移至侧边栏 -->
     </div>
     <div class="page-content">
         {% block content %}{% endblock %}
