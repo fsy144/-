@@ -53,8 +53,13 @@
                     <input type="text" id="operator" class="form-control" placeholder="操作人"
                            value="{{ session['username'] }}" readonly>
                 </div>
+                <!-- ✅ 修改：批次号改为下拉选择+手动输入 -->
                 <div class="col-md-2">
-                    <input type="text" id="batch_no" class="form-control" placeholder="批次号">
+                    <select id="batchSelect" class="form-select" onchange="handleBatchSelect()">
+                        <option value="">请选择批次号</option>
+                        <option value="other">其他（手动输入）</option>
+                    </select>
+                    <input type="text" id="batchManual" class="form-control mt-1 d-none" placeholder="请输入新批次号">
                 </div>
                 <div class="col-md-2">
                     <input type="date" id="production_date" class="form-control" placeholder="生产日期">
@@ -78,7 +83,11 @@
                     <input type="text" id="remarkManual" class="form-control mt-1 d-none" placeholder="请输入备注">
                 </div>
                 <div class="col-md-3">
-                    <button type="button" id="submitBtn" class="btn btn-primary w-100">确认操作</button>
+                    <div class="d-grid gap-2 d-md-flex">
+                        <button type="button" id="submitBtn" class="btn btn-primary flex-grow-1">确认操作</button>
+                        <!-- ✅ 新增：主页面取消按钮 -->
+                        <button type="button" id="cancelBtn" class="btn btn-secondary flex-grow-1" onclick="cancelOperation()">取消</button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -100,7 +109,11 @@
                     <input type="text" id="newProductUnit" class="form-control" placeholder="单位" value="个">
                 </div>
                 <div class="col-md-3">
-                    <button type="button" id="addProductBtn" class="btn btn-success">添加产品</button>
+                    <div class="d-grid gap-2 d-md-flex">
+                        <button type="button" id="addProductBtn" class="btn btn-success flex-grow-1">添加产品</button>
+                        <!-- ✅ 新增：添加产品取消按钮 -->
+                        <button type="button" class="btn btn-secondary flex-grow-1" onclick="cancelAddProduct()">取消</button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -208,7 +221,8 @@
                         <div class="text-center mt-1 text-muted small">请将运单条码对准摄像头</div>
                     </div>
                 </div>
-                <div class="d-grid">
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                    <button type="button" class="btn btn-secondary me-md-2" data-bs-dismiss="modal">取消</button>
                     <button type="button" class="btn btn-primary" onclick="confirmWaybill()">确认运单号</button>
                 </div>
             </div>
@@ -216,8 +230,8 @@
     </div>
 </div>
 
-<!-- 手机扫码模态框（新增手动输入条码区域） -->
-<div class="modal fade" id="scannerModal" tabindex="-1" aria-labelledby="scannerModalLabel" aria-hidden="true">
+<!-- 手机扫码模态框（✅ 移除右上角关闭按钮+添加底部取消按钮） -->
+<div class="modal fade" id="scannerModal" tabindex="-1" aria-labelledby="scannerModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header">
@@ -225,10 +239,10 @@
                     <span id="scanModeText">扫码入库</span>
                     <span id="waybillDisplay" class="ms-2 text-muted"></span>
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <!-- ✅ 移除：右上角关闭按钮 -->
             </div>
             <div class="modal-body">
-                <!-- 新增：手动输入条码+扫码枪支持区域 -->
+                <!-- 手动输入条码+扫码枪支持区域 -->
                 <div class="input-group mb-3">
                     <input type="text" id="modalBarcodeInput" class="form-control"
                            placeholder="扫码枪扫描条码或手动输入"
@@ -242,7 +256,9 @@
                 <div id="outboundList" class="d-none mt-3">
                     <h6>已扫描产品：</h6>
                     <ul id="scannedProducts" class="list-group"></ul>
-                    <div class="d-grid mt-3">
+                    <!-- ✅ 修改：取消按钮放在确认出库旁边 -->
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-3">
+                        <button type="button" class="btn btn-secondary me-md-2" onclick="cancelOutboundScan()">取消</button>
                         <button type="button" class="btn btn-success" onclick="confirmOutbound()">确认出库</button>
                     </div>
                 </div>
@@ -251,7 +267,7 @@
     </div>
 </div>
 
-<!-- 快速入库模态框（手机扫码用） -->
+<!-- 快速入库模态框（✅ 批次号改为下拉选择+手动输入） -->
 <div class="modal fade" id="quickInModal" tabindex="-1" aria-labelledby="quickInModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -269,9 +285,14 @@
                         <label class="form-label">数量</label>
                         <input type="number" id="quickInQuantity" class="form-control" value="1" min="1">
                     </div>
+                    <!-- ✅ 修改：快速入库批次号改为下拉选择 -->
                     <div class="col-md-6">
                         <label class="form-label">批次号 <span class="text-danger">*</span></label>
-                        <input type="text" id="quickInBatchNo" class="form-control" required>
+                        <select id="quickInBatchSelect" class="form-select" onchange="handleQuickInBatchSelect()">
+                            <option value="">请选择批次号</option>
+                            <option value="other">其他（手动输入）</option>
+                        </select>
+                        <input type="text" id="quickInBatchManual" class="form-control mt-1 d-none" placeholder="请输入新批次号">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">生产日期 <span class="text-danger">*</span></label>
@@ -386,7 +407,7 @@
             scannedProducts = [];
             updateScannedList();
             barcodeCooldown.clear();
-            // ✅ 新增：恢复视频和提示的显示（下次入库可用）
+            // 恢复视频和提示的显示（下次入库可用）
             $('#scannerVideo').show();
             $('.text-center.mt-2.text-muted').show();
         });
@@ -444,6 +465,63 @@
         }, 60000);
     });
 
+    // ✅ 新增：主页面批次号下拉选择处理
+    function handleBatchSelect() {
+        const val = $('#batchSelect').val();
+        if (val === 'other') {
+            $('#batchManual').removeClass('d-none').focus();
+        } else {
+            $('#batchManual').addClass('d-none').val('');
+        }
+    }
+
+    // ✅ 新增：快速入库批次号下拉选择处理
+    function handleQuickInBatchSelect() {
+        const val = $('#quickInBatchSelect').val();
+        if (val === 'other') {
+            $('#quickInBatchManual').removeClass('d-none').focus();
+        } else {
+            $('#quickInBatchManual').addClass('d-none').val('');
+        }
+    }
+
+    // ✅ 新增：主页面取消操作
+    function cancelOperation() {
+        $('#productInfo').addClass('d-none');
+        $('#addProductForm').addClass('d-none');
+        // 清空所有输入框
+        $('#productId').val('');
+        $('#quantity').val('1');
+        $('#batchSelect').val('');
+        $('#batchManual').val('').addClass('d-none');
+        $('#production_date').val('');
+        $('#expiry_date').val('');
+        $('#platformSelect').val('红书');
+        $('#platformManual').val('').addClass('d-none');
+        $('#remarkSelect').val('');
+        $('#remarkManual').val('').addClass('d-none');
+        // 聚焦到条码输入框
+        $('#barcodeInput').val('').focus();
+    }
+
+    // ✅ 新增：取消添加新产品
+    function cancelAddProduct() {
+        $('#addProductForm').addClass('d-none');
+        $('#newBarcode').val('');
+        $('#newProductName').val('');
+        $('#newProductSpec').val('');
+        $('#newProductUnit').val('个');
+        $('#barcodeInput').val('').focus();
+    }
+
+    // ✅ 新增：取消扫码出库
+    function cancelOutboundScan() {
+        $('#scannerModal').modal('hide');
+        scannedProducts = [];
+        currentWaybill = '';
+        updateScannedList();
+    }
+
     // 切换扫码枪快速入库模式
     function toggleQuickMode() {
         quickInMode = !quickInMode;
@@ -463,6 +541,7 @@
         }
     }
 
+    // ✅ 修改：查询产品后自动加载该产品的所有批次号
     function searchProduct() {
         const barcode = $('#barcodeInput').val().trim();
         if (!barcode) return;
@@ -477,7 +556,8 @@
                     $('#quickInProductId').val(product.id);
                     $('#quickInProductName').text(`产品：${product.name}${product.spec ? ' (' + product.spec + ')' : ''}`);
                     $('#quickInQuantity').val(1);
-                    $('#quickInBatchNo').val('');
+                    // 加载该产品的批次号
+                    loadProductBatches(product.id, '#quickInBatchSelect');
                     $('#quickInProductionDate').val('');
                     $('#quickInExpiryDate').val('');
                     $('#quickInPlatform').val('红书');
@@ -489,10 +569,12 @@
                     return;
                 }
 
-                // 普通模式：显示产品信息
+                // 普通模式：显示产品信息并加载批次号
                 $('#productId').val(product.id);
                 $('#productName').text(`名称：${product.name}${product.spec ? ' (' + product.spec + ')' : ''}`);
                 $('#productStock').text(`当前库存：${product.stock} ${product.unit}`);
+                // 加载该产品的批次号到主页面下拉框
+                loadProductBatches(product.id, '#batchSelect');
                 $('#productInfo').removeClass('d-none');
                 $('#addProductForm').addClass('d-none');
                 $('#barcodeInput').val('');
@@ -504,6 +586,24 @@
                 $('#productInfo').addClass('d-none');
                 $('#newProductName').focus();
             }
+        });
+    }
+
+    // ✅ 新增：加载产品批次号到指定下拉框
+    function loadProductBatches(productId, selectId) {
+        $.get(`/api/product/${productId}/batches`, function(res) {
+            const batches = res.success ? res.batches : [];
+            const select = $(selectId);
+            // 清空原有选项（保留"请选择"和"其他"）
+            select.empty();
+            select.append('<option value="">请选择批次号</option>');
+            // 添加历史批次号
+            batches.forEach(batch => {
+                select.append(`<option value="${batch}">${batch}</option>`);
+            });
+            select.append('<option value="other">其他（手动输入）</option>');
+            // 重置手动输入框
+            $(selectId.replace('Select', 'Manual')).val('').addClass('d-none');
         });
     }
 
@@ -566,13 +666,17 @@
         }
     }
 
-    // 手动表单提交（含入库必填校验）
+    // ✅ 修改：主页面提交时获取正确的批次号
     $('#submitBtn').on('click', function() {
         const productId = $('#productId').val();
         const type = $('#operationType').val();
         const quantity = $('#quantity').val();
         const operator = $('#operator').val();
-        const batchNo = $('#batch_no').val().trim();
+        // 获取批次号：下拉选择或手动输入
+        let batchNo = $('#batchSelect').val();
+        if (batchNo === 'other') {
+            batchNo = $('#batchManual').val().trim();
+        }
         const productionDate = $('#production_date').val();
         const expiryDate = $('#expiry_date').val();
         const platformSelect = $('#platformSelect').val();
@@ -584,7 +688,7 @@
 
         // 入库必填验证
         if (type === 'in') {
-            if (!batchNo) { alert('请填写批次号'); return; }
+            if (!batchNo) { alert('请选择或输入批次号'); return; }
             if (!productionDate) { alert('请选择生产日期'); return; }
             if (!expiryDate) { alert('请选择到期日期'); return; }
             if (platformSelect === 'other' && !platformManual) { alert('请填写平台'); return; }
@@ -815,6 +919,7 @@
         } catch (e) {}
     }
 
+    // ✅ 修改：入库模式下扫码后自动加载批次号
     function handleScannedBarcode(barcode) {
         $.get(`/api/product/${barcode}`, function(data) {
             if (data.success) {
@@ -824,7 +929,8 @@
                     $('#quickInProductId').val(product.id);
                     $('#quickInProductName').text(`产品：${product.name}${product.spec ? ' (' + product.spec + ')' : ''}`);
                     $('#quickInQuantity').val(1);
-                    $('#quickInBatchNo').val('');
+                    // 加载该产品的批次号到快速入库下拉框
+                    loadProductBatches(product.id, '#quickInBatchSelect');
                     $('#quickInProductionDate').val('');
                     $('#quickInExpiryDate').val('');
                     $('#quickInPlatform').val('红书');
@@ -846,17 +952,22 @@
         });
     }
 
+    // ✅ 修改：快速入库提交时获取正确的批次号
     function submitQuickIn() {
         const productId = $('#quickInProductId').val();
         const quantity = $('#quickInQuantity').val();
-        const batchNo = $('#quickInBatchNo').val().trim();
+        // 获取批次号：下拉选择或手动输入
+        let batchNo = $('#quickInBatchSelect').val();
+        if (batchNo === 'other') {
+            batchNo = $('#quickInBatchManual').val().trim();
+        }
         const productionDate = $('#quickInProductionDate').val();
         const expiryDate = $('#quickInExpiryDate').val();
         const platform = $('#quickInPlatform').val();
         const remark = $('#quickInRemark').val();
         const operator = $('#operator').val();
 
-        if (!batchNo) { alert('请填写批次号'); return; }
+        if (!batchNo) { alert('请选择或输入批次号'); return; }
         if (!productionDate) { alert('请选择生产日期'); return; }
         if (!expiryDate) { alert('请选择到期日期'); return; }
 
@@ -1061,7 +1172,7 @@
         });
     }
 
-    // ✅ 核心修改：扫码模态框显示时，仅入库模式启动摄像头
+    // 扫码模态框显示时，仅入库模式启动摄像头
     $('#scannerModal').on('shown.bs.modal', function() {
         // 只有入库模式才启动摄像头，出库模式不启动
         if (currentMode === 'in') {
