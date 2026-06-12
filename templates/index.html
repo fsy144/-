@@ -314,14 +314,13 @@
 </div>
 
 <div class="modal fade" id="confirmOutboundModal" tabindex="-1" aria-labelledby="confirmOutboundModalLabel"
-     aria-hidden="true">
+     aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="confirmOutboundModalLabel">确认出库</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                 <h6>本次出库产品清单：</h6>
                 <div id="confirmProductList" class="mb-3"></div>
                 <hr>
@@ -352,7 +351,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-secondary" onclick="cancelConfirmOutbound()">取消</button>
                 <button type="button" class="btn btn-primary" onclick="submitOutboundWithRemark()">确认提交</button>
             </div>
         </div>
@@ -464,6 +463,18 @@
                 }
             }
         });
+        $(document).on('keydown', function(e) {
+            if ((e.key === 'Enter' || e.keyCode === 13) &&
+                $('#confirmOutboundModal').hasClass('show')) {
+                const activeElement = document.activeElement;
+                if (activeElement.tagName !== 'INPUT' &&
+                    activeElement.tagName !== 'SELECT' &&
+                    activeElement.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                    submitOutboundWithRemark();
+                }
+            }
+        });
     });
 
     function handleBatchSelect() {
@@ -516,6 +527,9 @@
         $('#scannedProducts').empty();
     }
 
+    function cancelConfirmOutbound() {
+        $('#confirmOutboundModal').modal('hide');
+    }
     function toggleQuickMode() {
         quickInMode = !quickInMode;
         const btn = document.getElementById('modeToggleBtn');
