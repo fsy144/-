@@ -597,4 +597,4 @@ def add_product():
         return jsonify({'success': False, 'message': f'添加失败：{str(e)}'})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5001, debug=True)
