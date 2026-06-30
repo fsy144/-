@@ -61,7 +61,6 @@ class StockRecord(db.Model):
     waybill_number = db.Column(db.String(100))
     photo_path = db.Column(db.String(200))
     parent_id = db.Column(db.Integer, db.ForeignKey('stock_record.id'), nullable=True)
-    batch_no = db.Column(db.String(100))
     production_date = db.Column(db.Date)
     expiry_date = db.Column(db.Date)
     platform = db.Column(db.String(50))
@@ -77,7 +76,7 @@ with app.app_context():
         admin.set_password('fsy824phatma')
         db.session.add(admin)
         db.session.commit()
-    print("✅ 数据库初始化成功！")
+    print("数据库初始化成功！")
 
 def login_required(f):
     @wraps(f)
@@ -176,24 +175,7 @@ def upload_avatar():
 
 @app.route('/')
 def index():
-    from sqlalchemy import case, func
-    batch_stock_subq = db.session.query(
-        StockRecord.product_id,
-        StockRecord.batch_no,
-        func.sum(case((StockRecord.type.in_(['in', 'adjust_in']), StockRecord.quantity),
-                       (StockRecord.type.in_(['out', 'adjust_out']), -StockRecord.quantity),
-                       else_=0)).label('net_stock')
-    ).group_by(StockRecord.product_id, StockRecord.batch_no).subquery()
-
-    inventory_rows = db.session.query(
-        Product.id.label('product_id'),
-        Product.barcode,
-        Product.name,
-        Product.spec,
-        Product.unit,
-        batch_stock_subq.c.batch_no,
-        func.coalesce(batch_stock_subq.c.net_stock, 0).label('batch_stock')
-    ).outerjoin(batch_stock_subq, Product.id == batch_stock_subq.c.product_id).all()
+    inventory_rows = Product.query.order_by(Product.id.desc()).all()
 
     user = None
     if 'user_id' in session:
@@ -238,7 +220,6 @@ def download_records(record_type):
         '规格': lambda r: r.product.spec if r.product else '',
         '数量': lambda r: f"{r.quantity} {r.product.unit if r.product else ''}",
         '操作人': lambda r: r.operator or '',
-        '批次号': lambda r: r.batch_no or '',
         '生产日期': lambda r: r.production_date.strftime('%Y-%m-%d') if r.production_date else '',
         '到期日期': lambda r: r.expiry_date.strftime('%Y-%m-%d') if r.expiry_date else '',
         '平台': lambda r: r.platform or '',
@@ -353,106 +334,21 @@ def get_product(barcode):
         })
     return jsonify({'success': False, 'message': '未找到该条码对应的产品'})
 
-@app.route('/api/product/<int:product_id>/batches')
-def get_product_batches(product_id):
-    product = Product.query.get_or_404(product_id)
-    from sqlalchemy import case, func
-
-    batch_stocks = db.session.query(
-        StockRecord.batch_no,
-        func.sum(case(
-            (StockRecord.type.in_(['in', 'adjust_in']), StockRecord.quantity),
-            (StockRecord.type.in_(['out', 'adjust_out']), -StockRecord.quantity),
-            else_=0
-        )).label('net_stock')
-    ).filter(
-        StockRecord.product_id == product_id,
-        StockRecord.batch_no.isnot(None),
-        StockRecord.batch_no != ''
-    ).group_by(StockRecord.batch_no).having(
-        func.sum(case(
-            (StockRecord.type.in_(['in', 'adjust_in']), StockRecord.quantity),
-            (StockRecord.type.in_(['out', 'adjust_out']), -StockRecord.quantity),
-            else_=0
-        )) > 0
-    ).all()
-
-    batch_list = [b[0] for b in batch_stocks]
-    return jsonify({'success': True, 'batches': batch_list})
-
 @app.route('/api/inventory/search')
 def search_inventory():
     keyword = request.args.get('keyword', '').strip()
-    from sqlalchemy import case, func
-
-    net_stock_expr = func.sum(case(
-        (StockRecord.type.in_(['in', 'adjust_in']), StockRecord.quantity),
-        (StockRecord.type.in_(['out', 'adjust_out']), -StockRecord.quantity),
-        else_=0
-    ))
-
+    query = Product.query
     if keyword:
-        product = Product.query.filter_by(barcode=keyword).first()
-        if product:
-            batch_stocks = db.session.query(
-                StockRecord.batch_no,
-                net_stock_expr.label('net_stock')
-            ).filter(
-                StockRecord.product_id == product.id,
-                StockRecord.batch_no.isnot(None),
-                StockRecord.batch_no != ''
-            ).group_by(StockRecord.batch_no).having(net_stock_expr != 0).all()
-
-            data = [{
-                'product_name': product.name,
-                'barcode': product.barcode,
-                'batch_no': batch,
-                'stock': stock,
-                'unit': product.unit
-            } for batch, stock in batch_stocks]
-            return jsonify({'success': True, 'data': data})
-        else:
-            batch_stocks = db.session.query(
-                StockRecord.product_id,
-                StockRecord.batch_no,
-                net_stock_expr.label('net_stock')
-            ).filter(
-                StockRecord.batch_no == keyword
-            ).group_by(StockRecord.product_id, StockRecord.batch_no).having(net_stock_expr != 0).all()
-
-            data = []
-            for pid, batch, stock in batch_stocks:
-                prod = Product.query.get(pid)
-                if prod:
-                    data.append({
-                        'product_name': prod.name,
-                        'barcode': prod.barcode,
-                        'batch_no': batch,
-                        'stock': stock,
-                        'unit': prod.unit
-                    })
-            return jsonify({'success': True, 'data': data})
-    else:
-        results = db.session.query(
-            Product.id,
-            Product.barcode,
-            Product.name,
-            Product.unit,
-            StockRecord.batch_no,
-            net_stock_expr.label('net_stock')
-        ).join(StockRecord, StockRecord.product_id == Product.id)\
-         .filter(StockRecord.batch_no.isnot(None), StockRecord.batch_no != '')\
-         .group_by(Product.id, Product.barcode, Product.name, Product.unit, StockRecord.batch_no)\
-         .having(net_stock_expr != 0).all()
-
-        data = [{
-            'product_name': name,
-            'barcode': barcode,
-            'batch_no': batch,
-            'stock': stock,
-            'unit': unit
-        } for pid, barcode, name, unit, batch, stock in results]
-        return jsonify({'success': True, 'data': data})
+        pattern = f'%{keyword}%'
+        query = query.filter(db.or_(Product.barcode.ilike(pattern), Product.name.ilike(pattern)))
+    products = query.order_by(Product.name).all()
+    data = [{
+        'product_name': product.name,
+        'barcode': product.barcode,
+        'stock': product.stock,
+        'unit': product.unit
+    } for product in products]
+    return jsonify({'success': True, 'data': data})
 
 @app.route('/api/stock/in', methods=['POST'])
 def stock_in():
@@ -461,7 +357,6 @@ def stock_in():
         quantity = int(request.form.get('quantity', 1))
         operator = session.get('username', '未知')
         remark = request.form.get('remark', '')
-        batch_no = request.form.get('batch_no', '')
         production_date_str = request.form.get('production_date', '')
         expiry_date_str = request.form.get('expiry_date', '')
         platform = request.form.get('platform', '')
@@ -478,7 +373,6 @@ def stock_in():
             quantity=quantity,
             operator=operator,
             remark=remark,
-            batch_no=batch_no,
             production_date=production_date,
             expiry_date=expiry_date,
             platform=platform
@@ -499,7 +393,6 @@ def stock_out():
         remark = request.form.get('remark', '')
         waybill_number = request.form.get('waybill_number', '')
         photo_data = request.form.get('photo_data', '')
-        batch_no = request.form.get('batch_no', '')
         production_date_str = request.form.get('production_date', '')
         expiry_date_str = request.form.get('expiry_date', '')
         platform = request.form.get('platform', '')
@@ -531,7 +424,6 @@ def stock_out():
             remark=remark,
             waybill_number=waybill_number,
             photo_path=photo_path,
-            batch_no=batch_no,
             production_date=production_date,
             expiry_date=expiry_date,
             platform=platform
@@ -543,8 +435,8 @@ def stock_out():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'出库失败：{str(e)}'})
 
-@app.route('/api/stock/out_batch', methods=['POST'])
-def stock_out_batch():
+@app.route('/api/stock/out_bulk', methods=['POST'])
+def stock_out_bulk():
     try:
         data = request.get_json()
         waybill = data.get('waybill_number', '').strip()
@@ -580,7 +472,6 @@ def stock_out_batch():
             remark=remark,
             waybill_number=waybill,
             photo_path=photo_path,
-            batch_no=first_item.get('batch_no', ''),
             production_date=datetime.strptime(first_item.get('production_date'), '%Y-%m-%d').date() if first_item.get('production_date') else None,
             expiry_date=datetime.strptime(first_item.get('expiry_date'), '%Y-%m-%d').date() if first_item.get('expiry_date') else None,
             platform=platform
@@ -603,7 +494,6 @@ def stock_out_batch():
                 remark='',
                 waybill_number=waybill,
                 parent_id=main_record.id,
-                batch_no=item.get('batch_no', ''),
                 production_date=datetime.strptime(item.get('production_date'), '%Y-%m-%d').date() if item.get('production_date') else None,
                 expiry_date=datetime.strptime(item.get('expiry_date'), '%Y-%m-%d').date() if item.get('expiry_date') else None,
                 platform=platform
@@ -625,7 +515,6 @@ def adjust_inventory():
         quantity = int(request.form.get('quantity', 0))
         operator = session.get('username', '管理员')
         remark = request.form.get('remark', '')
-        batch_no = request.form.get('batch_no', '')
         production_date_str = request.form.get('production_date', '')
         expiry_date_str = request.form.get('expiry_date', '')
         adjust_type = request.form.get('adjust_type')
@@ -634,9 +523,6 @@ def adjust_inventory():
             return jsonify({'success': False, 'message': '操作类型错误'})
         if quantity <= 0:
             return jsonify({'success': False, 'message': '数量必须大于0'})
-        if not batch_no:
-            return jsonify({'success': False, 'message': '批次号不能为空'})
-
         production_date = datetime.strptime(production_date_str, '%Y-%m-%d').date() if production_date_str else None
         expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date() if expiry_date_str else None
 
@@ -654,7 +540,6 @@ def adjust_inventory():
             quantity=quantity,
             operator=operator,
             remark='库存调整：' + remark,
-            batch_no=batch_no,
             production_date=production_date,
             expiry_date=expiry_date
         )
@@ -667,25 +552,27 @@ def adjust_inventory():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'调整失败：{str(e)}'})
 
-@app.route('/api/inventory/delete_batch', methods=['POST'])
+@app.route('/api/product/delete', methods=['POST'])
 @permission_required('delete')
-def delete_batch_inventory():
+def delete_product():
     try:
         data = request.get_json()
         product_id = data.get('product_id')
-        batch_no = data.get('batch_no', '').strip()
-        operator = session.get('username', '管理员')
-
-        if not product_id or not batch_no:
+        if not product_id:
             return jsonify({'success': False, 'message': '参数不完整'})
 
         product = Product.query.get_or_404(product_id)
 
-        StockRecord.query.filter_by(product_id=product_id, batch_no=batch_no).delete()
+        record_ids = [record_id for (record_id,) in db.session.query(StockRecord.id).filter_by(product_id=product_id)]
+        if record_ids:
+            StockRecord.query.filter(StockRecord.parent_id.in_(record_ids)).update(
+                {'parent_id': None}, synchronize_session=False
+            )
+        StockRecord.query.filter_by(product_id=product_id).delete()
         db.session.delete(product)
         db.session.commit()
 
-        return jsonify({'success': True, 'message': f'已永久删除产品「{product.name}」及其批次「{batch_no}」'})
+        return jsonify({'success': True, 'message': f'已永久删除产品「{product.name}」及其库存记录'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': f'删除失败：{str(e)}'})

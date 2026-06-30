@@ -50,13 +50,6 @@
                            value="{{ session['username'] }}" readonly>
                 </div>
                 <div class="col-md-2">
-                    <select id="batchSelect" class="form-select" onchange="handleBatchSelect()">
-                        <option value="">请选择批次号</option>
-                        <option value="other">其他（手动输入）</option>
-                    </select>
-                    <input type="text" id="batchManual" class="form-control mt-1 d-none" placeholder="请输入新批次号">
-                </div>
-                <div class="col-md-2">
                     <input type="date" id="production_date" class="form-control" placeholder="生产日期">
                 </div>
                 <div class="col-md-2">
@@ -125,7 +118,6 @@
                     <th>产品名称</th>
                     <th>规格</th>
                     <th>单位</th>
-                    <th>批次号</th>
                     <th>库存数量</th>
                     <th>操作</th>
                 </tr>
@@ -137,20 +129,15 @@
                     <td>{{ row.name }}</td>
                     <td>{{ row.spec or '-' }}</td>
                     <td>{{ row.unit }}</td>
-                    <td>{{ row.batch_no or '-' }}</td>
-                    <td>{{ row.batch_stock }}</td>
+                    <td>{{ row.stock }}</td>
                     <td>
-                        {% if row.batch_no and row.batch_no != 'None' and row.batch_stock > 0 %}
                         {% if can_delete %}
                         <button class="btn btn-sm btn-danger"
-                                onclick="deleteBatch('{{ row.barcode }}', '{{ row.batch_no }}', '{{ row.batch_stock }}')">
+                                onclick="deleteProduct('{{ row.barcode }}')">
                             <i class="fa fa-trash"></i> 删除
                         </button>
                         {% else %}
                         <span class="text-muted">无权限</span>
-                        {% endif %}
-                        {% else %}
-                        <span class="text-muted">-</span>
                         {% endif %}
                     </td>
                 </tr>
@@ -270,14 +257,6 @@
                         <input type="number" id="quickInQuantity" class="form-control" value="1" min="1">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">批次号 <span class="text-danger">*</span></label>
-                        <select id="quickInBatchSelect" class="form-select" onchange="handleQuickInBatchSelect()">
-                            <option value="">请选择批次号</option>
-                            <option value="other">其他（手动输入）</option>
-                        </select>
-                        <input type="text" id="quickInBatchManual" class="form-control mt-1 d-none" placeholder="请输入新批次号">
-                    </div>
-                    <div class="col-md-6">
                         <label class="form-label">生产日期 <span class="text-danger">*</span></label>
                         <input type="date" id="quickInProductionDate" class="form-control" required>
                     </div>
@@ -326,7 +305,7 @@
                 <hr>
                 <div class="mb-3">
                     <label class="form-label">出库平台</label>
-                    <select id="outboundPlatformSelect" class="form-select" onchange="handleBatchPlatformSelect()">
+                    <select id="outboundPlatformSelect" class="form-select" onchange="handleOutboundPlatformSelect()">
                         <option value="红书">红书</option>
                         <option value="抖音">抖音</option>
                         <option value="京东">京东</option>
@@ -338,7 +317,7 @@
                 </div>
                 <div class="mb-3">
                     <label for="outboundRemark" class="form-label">出库备注</label>
-                    <select id="outboundRemarkSelect" class="form-select" onchange="handleBatchRemarkSelect()">
+                    <select id="outboundRemarkSelect" class="form-select" onchange="handleOutboundRemarkSelect()">
                         <option value="样品">样品</option>
                         <option value="奖品">奖品</option>
                         <option value="满赠">满赠</option>
@@ -377,11 +356,6 @@
 
     $(document).ready(function() {
         toggleFields();
-
-        $('#scannedProducts').on('change', '.batch-select', function() {
-            const index = $(this).data('index');
-            scannedProducts[index].selectedBatch = $(this).val();
-        });
 
         $('#scannerModal').on('hidden.bs.modal', function() {
             stopScanner();
@@ -477,31 +451,11 @@
         });
     });
 
-    function handleBatchSelect() {
-        const val = $('#batchSelect').val();
-        if (val === 'other') {
-            $('#batchManual').removeClass('d-none').focus();
-        } else {
-            $('#batchManual').addClass('d-none').val('');
-        }
-    }
-
-    function handleQuickInBatchSelect() {
-        const val = $('#quickInBatchSelect').val();
-        if (val === 'other') {
-            $('#quickInBatchManual').removeClass('d-none').focus();
-        } else {
-            $('#quickInBatchManual').addClass('d-none').val('');
-        }
-    }
-
     function cancelOperation() {
         $('#productInfo').addClass('d-none');
         $('#addProductForm').addClass('d-none');
         $('#productId').val('');
         $('#quantity').val('1');
-        $('#batchSelect').val('');
-        $('#batchManual').val('').addClass('d-none');
         $('#production_date').val('');
         $('#expiry_date').val('');
         $('#platformSelect').val('红书');
@@ -560,8 +514,6 @@
                     $('#quickInProductId').val(product.id);
                     $('#quickInProductName').text(`产品：${product.name}${product.spec ? ' (' + product.spec + ')' : ''}`);
                     $('#quickInQuantity').val(1);
-                    // 加载该产品的批次号
-                    loadProductBatches(product.id, '#quickInBatchSelect');
                     $('#quickInProductionDate').val('');
                     $('#quickInExpiryDate').val('');
                     $('#quickInPlatform').val('红书');
@@ -575,7 +527,6 @@
                 $('#productId').val(product.id);
                 $('#productName').text(`名称：${product.name}${product.spec ? ' (' + product.spec + ')' : ''}`);
                 $('#productStock').text(`当前库存：${product.stock} ${product.unit}`);
-                loadProductBatches(product.id, '#batchSelect');
                 $('#productInfo').removeClass('d-none');
                 $('#addProductForm').addClass('d-none');
                 $('#barcodeInput').val('');
@@ -587,20 +538,6 @@
                 $('#productInfo').addClass('d-none');
                 $('#newProductName').focus();
             }
-        });
-    }
-
-    function loadProductBatches(productId, selectId) {
-        $.get(`/api/product/${productId}/batches`, function(res) {
-            const batches = res.success ? res.batches : [];
-            const select = $(selectId);
-            select.empty();
-            select.append('<option value="">请选择批次号</option>');
-            batches.forEach(batch => {
-                select.append(`<option value="${batch}">${batch}</option>`);
-            });
-            select.append('<option value="other">其他（手动输入）</option>');
-            $(selectId.replace('Select', 'Manual')).val('').addClass('d-none');
         });
     }
 
@@ -645,7 +582,7 @@
         }
     }
 
-    function handleBatchRemarkSelect() {
+    function handleOutboundRemarkSelect() {
         const val = $('#outboundRemarkSelect').val();
         if (val === 'other') {
             $('#outboundRemarkManual').removeClass('d-none').focus();
@@ -654,7 +591,7 @@
         }
     }
 
-    function handleBatchPlatformSelect() {
+    function handleOutboundPlatformSelect() {
         const val = $('#outboundPlatformSelect').val();
         if (val === 'other') {
             $('#outboundPlatformManual').removeClass('d-none').focus();
@@ -668,10 +605,6 @@
         const type = $('#operationType').val();
         const quantity = $('#quantity').val();
         const operator = $('#operator').val();
-        let batchNo = $('#batchSelect').val();
-        if (batchNo === 'other') {
-            batchNo = $('#batchManual').val().trim();
-        }
         const productionDate = $('#production_date').val();
         const expiryDate = $('#expiry_date').val();
         const platformSelect = $('#platformSelect').val();
@@ -682,7 +615,6 @@
         let remark = remarkSelect === 'other' ? (remarkManual || '其他') : remarkSelect;
 
         if (type === 'in') {
-            if (!batchNo) { alert('请选择或输入批次号'); return; }
             if (!productionDate) { alert('请选择生产日期'); return; }
             if (!expiryDate) { alert('请选择到期日期'); return; }
             if (platformSelect === 'other' && !platformManual) { alert('请填写平台'); return; }
@@ -694,7 +626,6 @@
             product_id: productId,
             quantity: quantity,
             operator: operator,
-            batch_no: batchNo,
             production_date: productionDate,
             expiry_date: expiryDate,
             platform: platform,
@@ -911,8 +842,6 @@
                     $('#quickInProductId').val(product.id);
                     $('#quickInProductName').text(`产品：${product.name}${product.spec ? ' (' + product.spec + ')' : ''}`);
                     $('#quickInQuantity').val(1);
-                    // 加载该产品的批次号到快速入库下拉框
-                    loadProductBatches(product.id, '#quickInBatchSelect');
                     $('#quickInProductionDate').val('');
                     $('#quickInExpiryDate').val('');
                     $('#quickInPlatform').val('红书');
@@ -920,7 +849,7 @@
                     const quickInModal = new bootstrap.Modal(document.getElementById('quickInModal'));
                     quickInModal.show();
                 } else {
-                    loadBatchesAndAdd(product);
+                    addScannedProduct(product);
                 }
             } else {
                 if (confirm(`未找到条码 ${barcode} 对应的产品，是否添加新产品？`)) {
@@ -937,17 +866,12 @@
     function submitQuickIn() {
         const productId = $('#quickInProductId').val();
         const quantity = $('#quickInQuantity').val();
-        let batchNo = $('#quickInBatchSelect').val();
-        if (batchNo === 'other') {
-            batchNo = $('#quickInBatchManual').val().trim();
-        }
         const productionDate = $('#quickInProductionDate').val();
         const expiryDate = $('#quickInExpiryDate').val();
         const platform = $('#quickInPlatform').val();
         const remark = $('#quickInRemark').val();
         const operator = $('#operator').val();
 
-        if (!batchNo) { alert('请选择或输入批次号'); return; }
         if (!productionDate) { alert('请选择生产日期'); return; }
         if (!expiryDate) { alert('请选择到期日期'); return; }
 
@@ -955,7 +879,6 @@
             product_id: productId,
             quantity: quantity,
             operator: operator,
-            batch_no: batchNo,
             production_date: productionDate,
             expiry_date: expiryDate,
             platform: platform,
@@ -976,13 +899,7 @@
         });
     }
 
-    function loadBatchesAndAdd(product) {
-        $.get(`/api/product/${product.id}/batches`, function(res) {
-            const batches = res.success ? res.batches : [];
-            if (batches.length === 0) {
-                alert(`产品 ${product.name} 暂无可用批次号，请先入库建立批次。`);
-                return;
-            }
+    function addScannedProduct(product) {
             const index = scannedProducts.length;
             scannedProducts.push({
                 id: product.id,
@@ -990,13 +907,7 @@
                 name: product.name,
                 spec: product.spec,
                 unit: product.unit,
-                quantity: 1,
-                batches: batches,
-                selectedBatch: batches[0]
-            });
-            let batchOptions = '';
-            batches.forEach(batch => {
-                batchOptions += `<option value="${batch}" ${batch === batches[0] ? 'selected' : ''}>${batch}</option>`;
+                quantity: 1
             });
 
             const itemHtml = `
@@ -1006,25 +917,17 @@
                         <span class="badge bg-primary ms-2">1 ${product.unit}</span>
                     </div>
                     <div class="d-flex align-items-center mt-2 mt-md-0">
-                        <label class="me-2 mb-0">批次号:</label>
-                        <select class="form-select form-select-sm batch-select" style="width: auto;" data-index="${index}">
-                            ${batchOptions}
-                        </select>
                         <button class="btn btn-sm btn-outline-danger ms-2" onclick="removeProduct(${index})"><i class="fa fa-trash"></i></button>
                     </div>
                 </li>
             `;
 
             $('#scannedProducts').append(itemHtml);
-        });
     }
 
     function removeProduct(index) {
         scannedProducts.splice(index, 1);
         $('#scannedProducts li').eq(index).remove();
-        $('#scannedProducts li').each(function(i) {
-            $(this).find('.batch-select').data('index', i);
-        });
     }
 
     function confirmOutbound() {
@@ -1032,14 +935,7 @@
             alert('请先扫描产品');
             return;
         }
-        for (let i = 0; i < scannedProducts.length; i++) {
-            const item = scannedProducts[i];
-            if (!item.selectedBatch) {
-                alert(`第${i+1}条记录（${item.name}）未选择批次号，请选择后再确认出库。`);
-                return;
-            }
-        }
-        let productHtml = '<table class="table table-sm"><thead><tr><th>序号</th><th>产品名称</th><th>规格</th><th>数量</th><th>批次号</th></tr></thead><tbody>';
+        let productHtml = '<table class="table table-sm"><thead><tr><th>序号</th><th>产品名称</th><th>规格</th><th>数量</th></tr></thead><tbody>';
         scannedProducts.forEach((p, i) => {
             productHtml += `
                 <tr>
@@ -1047,7 +943,6 @@
                     <td>${p.name}</td>
                     <td>${p.spec || '-'}</td>
                     <td>${p.quantity} ${p.unit}</td>
-                    <td>${p.selectedBatch}</td>
                 </tr>
             `;
         });
@@ -1079,12 +974,11 @@
             platform: platform,
             items: scannedProducts.map(p => ({
                 product_id: p.id,
-                quantity: p.quantity,
-                batch_no: p.selectedBatch
+                quantity: p.quantity
             }))
         };
         $.ajax({
-            url: '/api/stock/out_batch',
+            url: '/api/stock/out_bulk',
             type: 'POST',
             contentType: 'application/json',
             data: JSON.stringify(payload),
@@ -1102,24 +996,23 @@
         });
     }
 
-    function deleteBatch(barcode, batchNo, currentStock) {
+    function deleteProduct(barcode) {
         $.get(`/api/product/${barcode}`, function(data) {
             if (!data.success) {
             alert('产品不存在');
             return;
         }
         const productName = data.data.name;
-        if (!confirm(`确定要永久删除产品「${productName}」的批次「${batchNo}」吗？\n\n⚠️ 此操作将同时删除该产品本身及其所有库存记录，不可恢复！`)) {
+        if (!confirm(`确定要永久删除产品「${productName}」吗？\n\n⚠️ 此操作将同时删除该产品的所有库存记录，不可恢复！`)) {
             return;
         }
 
         $.ajax({
-            url: '/api/inventory/delete_batch',
+            url: '/api/product/delete',
             type: 'POST',
             contentType: 'application/json',
             data: JSON.stringify({
-                product_id: data.data.id,
-                batch_no: batchNo
+                product_id: data.data.id
             }),
             success: function(res) {
                 if (res.success) {

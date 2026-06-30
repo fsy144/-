@@ -10,8 +10,8 @@
     <div class="card-body">
         <form id="adjustForm" class="row g-3">
             <div class="col-md-3">
-                <label class="form-label">产品条码/批次号</label>
-                <input type="text" id="adjustBarcode" class="form-control" placeholder="输入条码或批次号" required>
+                <label class="form-label">产品条码</label>
+                <input type="text" id="adjustBarcode" class="form-control" placeholder="输入产品条码" required>
             </div>
             <div class="col-md-2">
                 <label class="form-label">操作类型</label>
@@ -23,10 +23,6 @@
             <div class="col-md-2">
                 <label class="form-label">数量 *</label>
                 <input type="number" id="adjustQuantity" class="form-control" placeholder="数量" min="1" required>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">批次号 *</label>
-                <input type="text" id="adjustBatch" class="form-control" placeholder="必填" required>
             </div>
             <div class="col-md-3">
                 <label class="form-label">操作人</label>
@@ -53,9 +49,9 @@
 
 <div class="card mt-3">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="fa fa-list"></i> 当前库存（按批次）</span>
+        <span><i class="fa fa-list"></i> 当前库存</span>
         <div class="input-group input-group-sm" style="width: 300px;">
-            <input type="text" id="inventoryFilter" class="form-control" placeholder="输入产品名称/条码/批次号筛选">
+            <input type="text" id="inventoryFilter" class="form-control" placeholder="输入产品名称或条码筛选">
             <button class="btn btn-primary" onclick="filterInventory()">筛选</button>
             <button class="btn btn-outline-secondary" onclick="resetFilter()">重置</button>
         </div>
@@ -97,7 +93,7 @@
     function searchByAdjustInput() {
         const keyword = $('#adjustBarcode').val().trim();
         if (!keyword) {
-            alert('请输入产品条码或批次号');
+            alert('请输入产品条码');
             return;
         }
         $.get('/api/inventory/search', { keyword: keyword }, function(res) {
@@ -117,8 +113,7 @@
         if (keyword) {
             filteredData = originalInventoryData.filter(item => {
                 return item.product_name.toLowerCase().includes(keyword) ||
-                       item.barcode.toLowerCase().includes(keyword) ||
-                       item.batch_no.toLowerCase().includes(keyword);
+                       item.barcode.toLowerCase().includes(keyword);
             });
         }
 
@@ -142,13 +137,13 @@
                 totalStock += parseInt(item.stock) || 0;
             });
 
-            let html = '<table class="table table-bordered table-sm"><thead><tr><th>产品名称</th><th>条码</th><th>批次号</th><th>库存数量</th><th>单位</th></tr></thead><tbody>';
+            let html = '<table class="table table-bordered table-sm"><thead><tr><th>产品名称</th><th>条码</th><th>库存数量</th><th>单位</th></tr></thead><tbody>';
             res.data.forEach(item => {
-                html += `<tr><td>${item.product_name}</td><td>${item.barcode}</td><td>${item.batch_no}</td><td>${item.stock}</td><td>${item.unit}</td></tr>`;
+                html += `<tr><td>${item.product_name}</td><td>${item.barcode}</td><td>${item.stock}</td><td>${item.unit}</td></tr>`;
             });
 
             html += `<tr class="table-primary fw-bold">
-                        <td colspan="3" class="text-end">合计：</td>
+                        <td colspan="2" class="text-end">合计：</td>
                         <td>${totalStock}</td>
                         <td>-</td>
                     </tr>`;
@@ -165,9 +160,7 @@
             return;
         }
         const barcode = $('#adjustBarcode').val().trim();
-        const batch = $('#adjustBatch').val().trim();
         if (!barcode) { alert('请输入产品条码'); return; }
-        if (!batch) { alert('批次号不能为空'); return; }
         $.get(`/api/product/${barcode}`, function(data) {
             if (!data.success) { alert('未找到该条码对应的产品'); return; }
             const productId = data.data.id;
@@ -182,7 +175,6 @@
                 product_id: productId,
                 adjust_type: adjustType,
                 quantity: quantity,
-                batch_no: batch,
                 production_date: productionDate,
                 expiry_date: expiryDate,
                 remark: remark
@@ -190,7 +182,6 @@
                 if (res.success) {
                     alert(res.message);
                     $('#adjustQuantity').val('');
-                    $('#adjustBatch').val('');
                     $('#adjustProductionDate').val('');
                     $('#adjustExpiryDate').val('');
                     $('#adjustRemark').val('');

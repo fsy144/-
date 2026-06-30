@@ -27,7 +27,6 @@
                         {% if record_type == 'out' %}
                         <th>运单号</th>
                         {% endif %}
-                        <th>批次号</th>
                         <th>生产日期</th>
                         <th>到期日期</th>
                         <th>平台</th>
@@ -50,7 +49,6 @@
                         {% if record_type == 'out' %}
                         <td>{{ record.waybill_number or '-' }}</td>
                         {% endif %}
-                        <td>{{ record.batch_no or '-' }}</td>
                         <td>{{ record.production_date.strftime('%Y-%m-%d') if record.production_date else '-' }}</td>
                         <td>{{ record.expiry_date.strftime('%Y-%m-%d') if record.expiry_date else '-' }}</td>
                         <td>{{ record.platform or '-' }}</td>
@@ -87,7 +85,6 @@
                                         <th>产品名称</th>
                                         <th>规格</th>
                                         <th>数量</th>
-                                        <th>批次号</th>
                                         <th>生产日期</th>
                                         <th>到期日期</th>
                                     </tr>
@@ -99,7 +96,6 @@
                                         <td>{{ sub.product.name }}</td>
                                         <td>{{ sub.product.spec or '-' }}</td>
                                         <td>{{ sub.quantity }} {{ sub.product.unit }}</td>
-                                        <td>{{ sub.batch_no or '-' }}</td>
                                         <td>{{ sub.production_date.strftime('%Y-%m-%d') if sub.production_date else '-' }}</td>
                                         <td>{{ sub.expiry_date.strftime('%Y-%m-%d') if sub.expiry_date else '-' }}</td>
                                     </tr>
@@ -138,7 +134,7 @@
                         {% if record_type == 'out' %}
                             {% set all_fields = all_fields + ['运单号'] %}
                         {% endif %}
-                        {% set all_fields = all_fields + ['批次号', '生产日期', '到期日期', '平台', '操作人', '备注'] %}
+                        {% set all_fields = all_fields + ['生产日期', '到期日期', '平台', '操作人', '备注'] %}
                         {% for field in all_fields %}
                         <div class="form-check form-check-inline">
                             <input class="form-check-input export-field-check" type="checkbox" name="fields" value="{{ field }}" id="field_{{ loop.index }}" checked>
