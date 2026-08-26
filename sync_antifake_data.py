@@ -93,10 +93,12 @@ def sync_events(source, state):
 def enrich_existing_events():
     """为已导入但尚无归属地的历史扫码记录补充省市信息。"""
     enriched = 0
+    last_id = 0
     while True:
         events = AntiFakeScanEvent.query.filter(
+            AntiFakeScanEvent.id > last_id,
             db.or_(AntiFakeScanEvent.country.is_(None), AntiFakeScanEvent.country == '')
-        ).limit(BATCH_SIZE).all()
+        ).order_by(AntiFakeScanEvent.id).limit(BATCH_SIZE).all()
         if not events:
             break
         for event in events:
@@ -104,7 +106,9 @@ def enrich_existing_events():
             event.country = location['country']
             event.province = location['province']
             event.city = location['city']
-            enriched += 1
+            last_id = event.id
+            if any(location.values()):
+                enriched += 1
         db.session.commit()
     return enriched
 
