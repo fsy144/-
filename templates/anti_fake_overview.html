@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}防伪查询汇总{% endblock %}
+{% block page_title %}防伪查询汇总{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card { border-left: 4px solid #1ab394; }
+    .stat-card.warning { border-left-color: #f8ac59; }
+    .stat-value { font-size: 26px; font-weight: 600; color: #2f4050; }
+    .table td, .table th { vertical-align: middle; }
+    .code-cell { font-family: Consolas, "Courier New", monospace; font-size: 12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-xl-3 col-md-6"><div class="card stat-card"><div class="card-body"><div class="text-muted">防伪码总数</div><div class="stat-value">{{ summary.code_count }}</div></div></div></div>
+    <div class="col-xl-3 col-md-6"><div class="card stat-card"><div class="card-body"><div class="text-muted">累计查询次数</div><div class="stat-value">{{ summary.scan_count }}</div></div></div></div>
+    <div class="col-xl-3 col-md-6"><div class="card stat-card"><div class="card-body"><div class="text-muted">今日查询次数</div><div class="stat-value">{{ summary.today_count }}</div></div></div></div>
+    <div class="col-xl-3 col-md-6"><div class="card stat-card warning"><div class="card-body"><div class="text-muted">重复扫描警告</div><div class="stat-value">{{ summary.warning_count }}</div></div></div></div>
+</div>
+
+<div class="card">
+    <div class="card-header"><i class="fa fa-filter"></i> 查询条件</div>
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-lg-4"><input name="keyword" value="{{ keyword }}" class="form-control" placeholder="防伪编号、QR ID、产品名或 IP"></div>
+            <div class="col-lg-2"><select name="result" class="form-select"><option value="">全部结果</option><option value="success" {% if result == 'success' %}selected{% endif %}>验证成功</option><option value="warning" {% if result == 'warning' %}selected{% endif %}>重复警告</option><option value="invalid" {% if result == 'invalid' %}selected{% endif %}>无效编码</option></select></div>
+            <div class="col-lg-2"><input name="start_date" type="date" value="{{ start_date }}" class="form-control"></div>
+            <div class="col-lg-2"><input name="end_date" type="date" value="{{ end_date }}" class="form-control"></div>
+            <div class="col-lg-2 d-flex gap-2"><button class="btn btn-primary flex-fill" type="submit"><i class="fa fa-search"></i> 查询</button><a class="btn btn-secondary" href="{{ url_for('anti_fake_overview') }}">重置</a></div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center"><span><i class="fa fa-list"></i> 扫码明细</span><small class="text-muted">当前共 {{ events.total }} 条记录</small></div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead><tr><th>查询时间</th><th>防伪编号</th><th>产品</th><th>省份 / 地区</th><th>查询方式</th><th>号码 / IP</th><th>结果</th><th></th></tr></thead>
+                <tbody>
+                {% for event in events.items %}
+                <tr>
+                    <td>{{ event.scan_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td class="code-cell">{{ event.anti_fake_code.serial_no }}</td>
+                    <td>{{ event.anti_fake_code.product_name or '-' }}</td>
+                    <td>{{ event.province or event.country or '-' }}{% if event.city %} / {{ event.city }}{% endif %}</td>
+                    <td>{{ event.scan_channel or event.platform or '-' }}</td>
+                    <td class="code-cell">{{ event.ip_address }}</td>
+                    <td>{% if event.verification_result == 'success' %}<span class="badge text-bg-success">验证成功</span>{% elif event.verification_result == 'warning' %}<span class="badge text-bg-warning">重复警告</span>{% else %}<span class="badge text-bg-danger">无效编码</span>{% endif %}</td>
+                    <td><a href="{{ url_for('anti_fake_code_detail', code_id=event.anti_fake_code.id) }}" class="btn btn-sm btn-outline-primary">详情</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-center text-muted py-5">暂无防伪扫码数据。接入 .com 数据后会在此处显示。</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if events.pages > 1 %}
+        <nav class="mt-3"><ul class="pagination mb-0 justify-content-end">
+            {% for p in events.iter_pages() %}{% if p %}<li class="page-item {% if p == events.page %}active{% endif %}"><a class="page-link" href="{{ url_for('anti_fake_overview', page=p, keyword=keyword, result=result, start_date=start_date, end_date=end_date) }}">{{ p }}</a></li>{% else %}<li class="page-item disabled"><span class="page-link">…</span></li>{% endif %}{% endfor %}
+        </ul></nav>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

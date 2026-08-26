@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file, session
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import inspect, text
 from datetime import datetime, date
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
@@ -8,6 +9,7 @@ import io
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 from functools import wraps
+import hmac
 
 app = Flask(__name__)
 app.config.from_pyfile('config.py')
@@ -69,8 +71,74 @@ class StockRecord(db.Model):
     product = db.relationship('Product', backref=db.backref('records', lazy=True))
     sub_records = db.relationship('StockRecord', backref=db.backref('parent', remote_side=[id]), lazy=True)
 
+
+# 防伪查询模块的数据表。它们与现有的库存产品、库存记录完全独立，
+# 因此增加本模块不会改变 .cn 现有的库存业务数据。
+class AntiFakeCode(db.Model):
+    __tablename__ = 'anti_fake_codes'
+
+    id = db.Column(db.Integer, primary_key=True)
+    qr_id = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    serial_no = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    product_name = db.Column(db.String(200))
+    product_spec = db.Column(db.String(100))
+    batch_no = db.Column(db.String(100))
+    package_ratio = db.Column(db.String(50))
+    scan_count = db.Column(db.Integer, default=0, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    scan_events = db.relationship(
+        'AntiFakeScanEvent', backref='anti_fake_code', lazy=True,
+        cascade='all, delete-orphan'
+    )
+
+
+class AntiFakeScanEvent(db.Model):
+    __tablename__ = 'anti_fake_scan_events'
+
+    id = db.Column(db.Integer, primary_key=True)
+    qr_id = db.Column(
+        db.String(64), db.ForeignKey('anti_fake_codes.qr_id'), nullable=False, index=True
+    )
+    scan_time = db.Column(db.DateTime, default=datetime.now, nullable=False, index=True)
+    ip_address = db.Column(db.String(64), nullable=False, index=True)
+    country = db.Column(db.String(100))
+    province = db.Column(db.String(100))
+    city = db.Column(db.String(100))
+    platform = db.Column(db.String(100))
+    scan_channel = db.Column(db.String(100))
+    verification_result = db.Column(db.String(30), nullable=False, default='success', index=True)
+    user_agent = db.Column(db.Text)
+
+
+class AntiFakeSyncState(db.Model):
+    """记录只读同步进度，避免重复导入 .com 的 scan_logs。"""
+    __tablename__ = 'anti_fake_sync_state'
+
+    id = db.Column(db.Integer, primary_key=True)
+    # .com 的 scan_logs.id 或实时上报 ID，用于支持安全重试而不重复记一条扫码。
+    source_event_id = db.Column(db.String(100), unique=True, index=True)
+    source_name = db.Column(db.String(50), unique=True, nullable=False)
+    last_code_id = db.Column(db.Integer, default=0, nullable=False)
+    last_scan_log_id = db.Column(db.Integer, default=0, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+def ensure_anti_fake_schema():
+    """为已存在的本地测试库补齐防伪模块新增列，不触碰库存业务表。"""
+    columns = {column['name'] for column in inspect(db.engine).get_columns('anti_fake_scan_events')}
+    if 'source_event_id' not in columns:
+        db.session.execute(text('ALTER TABLE anti_fake_scan_events ADD COLUMN source_event_id VARCHAR(100)'))
+        db.session.execute(text(
+            'CREATE UNIQUE INDEX IF NOT EXISTS ix_anti_fake_scan_events_source_event_id '
+            'ON anti_fake_scan_events (source_event_id)'
+        ))
+        db.session.commit()
+
+
 with app.app_context():
     db.create_all()
+    ensure_anti_fake_schema()
     if not User.query.filter_by(username='admin').first():
         admin = User(username='admin', role='admin', permissions='delete,manage_users,adjust')
         admin.set_password('fsy824phatma')
@@ -103,7 +171,8 @@ def permission_required(permission):
 
 @app.before_request
 def require_login():
-    allowed_endpoints = ['login', 'static']
+    # .com 的扫码事件由本机服务令牌鉴权，不能被重定向到后台登录页。
+    allowed_endpoints = ['login', 'static', 'receive_anti_fake_event']
     if request.endpoint in allowed_endpoints:
         return
     if 'user_id' not in session:
@@ -267,6 +336,124 @@ def inventory_page():
     user = User.query.get(session.get('user_id'))
     can_adjust = user.has_permission('adjust') if user else False
     return render_template('inventory.html', can_adjust=can_adjust)
+
+
+@app.route('/anti-fake')
+def anti_fake_overview():
+    """所有已登录 .cn 后台的用户均可查看的防伪扫码汇总页。"""
+    keyword = request.args.get('keyword', '').strip()
+    result = request.args.get('result', '').strip()
+    start_date = request.args.get('start_date', '').strip()
+    end_date = request.args.get('end_date', '').strip()
+    page = request.args.get('page', 1, type=int)
+
+    query = AntiFakeScanEvent.query.join(AntiFakeCode)
+    if keyword:
+        pattern = f'%{keyword}%'
+        query = query.filter(db.or_(
+            AntiFakeCode.serial_no.ilike(pattern),
+            AntiFakeCode.qr_id.ilike(pattern),
+            AntiFakeScanEvent.ip_address.ilike(pattern),
+            AntiFakeCode.product_name.ilike(pattern)
+        ))
+    if result:
+        query = query.filter(AntiFakeScanEvent.verification_result == result)
+    if start_date:
+        try:
+            query = query.filter(AntiFakeScanEvent.scan_time >= datetime.strptime(start_date, '%Y-%m-%d'))
+        except ValueError:
+            start_date = ''
+    if end_date:
+        try:
+            end_at = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+            query = query.filter(AntiFakeScanEvent.scan_time <= end_at)
+        except ValueError:
+            end_date = ''
+
+    events = query.order_by(AntiFakeScanEvent.scan_time.desc()).paginate(
+        page=page, per_page=30, error_out=False
+    )
+    summary = {
+        'code_count': AntiFakeCode.query.count(),
+        'scan_count': AntiFakeScanEvent.query.count(),
+        'today_count': AntiFakeScanEvent.query.filter(
+            AntiFakeScanEvent.scan_time >= datetime.combine(date.today(), datetime.min.time())
+        ).count(),
+        'warning_count': AntiFakeScanEvent.query.filter_by(verification_result='warning').count(),
+    }
+    return render_template(
+        'anti_fake_overview.html', events=events, summary=summary, keyword=keyword,
+        result=result, start_date=start_date, end_date=end_date
+    )
+
+
+@app.route('/anti-fake/codes/<int:code_id>')
+def anti_fake_code_detail(code_id):
+    """单个防伪码的产品资料与完整扫码时间线。"""
+    code = AntiFakeCode.query.get_or_404(code_id)
+    events = AntiFakeScanEvent.query.filter_by(qr_id=code.qr_id).order_by(
+        AntiFakeScanEvent.scan_time.desc()
+    ).all()
+    return render_template('anti_fake_detail.html', code=code, events=events)
+
+
+@app.route('/api/anti-fake/events', methods=['POST'])
+def receive_anti_fake_event():
+    """供 .com 后续在扫码完成后向本机 phatma.cn 上报一条事件。"""
+    expected_token = os.environ.get('ANTI_FAKE_SYNC_TOKEN')
+    supplied_token = request.headers.get('X-Anti-Fake-Token', '')
+    if not expected_token or not hmac.compare_digest(supplied_token, expected_token):
+        return jsonify({'success': False, 'message': '未授权'}), 403
+
+    payload = request.get_json(silent=True) or {}
+    required = ('event_id', 'qr_id', 'serial_no', 'ip_address')
+    missing = [field for field in required if not str(payload.get(field, '')).strip()]
+    if missing:
+        return jsonify({'success': False, 'message': '缺少字段: ' + ', '.join(missing)}), 400
+
+    event_id = str(payload['event_id']).strip()
+    if AntiFakeScanEvent.query.filter_by(source_event_id=event_id).first():
+        return jsonify({'success': True, 'duplicate': True})
+
+    qr_id = str(payload['qr_id']).strip()
+    code = AntiFakeCode.query.filter_by(qr_id=qr_id).first()
+    if code is None:
+        code = AntiFakeCode(qr_id=qr_id, serial_no=str(payload['serial_no']).strip())
+        db.session.add(code)
+
+    try:
+        scan_time = datetime.fromisoformat(str(payload.get('scan_time', '')).replace('Z', '+00:00'))
+    except ValueError:
+        scan_time = datetime.now()
+
+    result = str(payload.get('verification_result', 'success')).strip()
+    if result not in ('success', 'warning', 'invalid'):
+        return jsonify({'success': False, 'message': 'verification_result 无效'}), 400
+
+    for field in ('product_name', 'product_spec', 'batch_no', 'package_ratio'):
+        if payload.get(field) is not None:
+            setattr(code, field, str(payload[field]).strip() or None)
+    if payload.get('scan_count') is not None:
+        try:
+            code.scan_count = max(code.scan_count, int(payload['scan_count']))
+        except (TypeError, ValueError):
+            pass
+
+    db.session.add(AntiFakeScanEvent(
+        source_event_id=event_id,
+        qr_id=qr_id,
+        scan_time=scan_time,
+        ip_address=str(payload['ip_address']).strip(),
+        country=str(payload.get('country', '')).strip() or None,
+        province=str(payload.get('province', '')).strip() or None,
+        city=str(payload.get('city', '')).strip() or None,
+        platform=str(payload.get('platform', '')).strip() or None,
+        scan_channel=str(payload.get('scan_channel', '')).strip() or None,
+        verification_result=result,
+        user_agent=str(payload.get('user_agent', '')).strip() or None,
+    ))
+    db.session.commit()
+    return jsonify({'success': True, 'duplicate': False}), 201
 
 @app.route('/admin/users')
 @permission_required('manage_users')

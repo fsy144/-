@@ -90,6 +90,8 @@
                 class="fa fa-arrow-up"></i> 出库记录</a></li>
         <li><a href="/inventory" class="{% if request.path == '/inventory' %}active{% endif %}"><i
                 class="fa fa-cubes"></i> 库存管理</a></li>
+        <li><a href="{{ url_for('anti_fake_overview') }}" class="{% if request.path.startswith('/anti-fake') %}active{% endif %}"><i
+                class="fa fa-shield"></i> 防伪查询汇总</a></li>
         <li>
             <a href="/admin/users" class="{% if request.path == '/admin/users' %}active{% endif %}">
             <i class="fa fa-cog"></i> 系统设置

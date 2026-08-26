@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}防伪码查询详情{% endblock %}
+{% block page_title %}防伪码查询详情{% endblock %}
+
+{% block content %}
+<div class="mb-3"><a class="btn btn-secondary btn-sm" href="{{ url_for('anti_fake_overview') }}"><i class="fa fa-arrow-left"></i> 返回汇总</a></div>
+
+<div class="card">
+    <div class="card-header"><i class="fa fa-cube"></i> 产品基本信息</div>
+    <div class="card-body">
+        <div class="row g-4">
+            <div class="col-md-4"><div class="text-muted small">防伪编号</div><div class="mt-1">{{ code.serial_no }}</div></div>
+            <div class="col-md-4"><div class="text-muted small">产品</div><div class="mt-1">{{ code.product_name or '-' }}</div></div>
+            <div class="col-md-4"><div class="text-muted small">包装比例</div><div class="mt-1">{{ code.package_ratio or '-' }}</div></div>
+            <div class="col-md-4"><div class="text-muted small">批号</div><div class="mt-1">{{ code.batch_no or '-' }}</div></div>
+            <div class="col-md-4"><div class="text-muted small">产品规格</div><div class="mt-1">{{ code.product_spec or '-' }}</div></div>
+            <div class="col-md-4"><div class="text-muted small">累计成功扫描</div><div class="mt-1">{{ code.scan_count }}</div></div>
+            <div class="col-12"><div class="text-muted small">QR ID</div><div class="mt-1 font-monospace small">{{ code.qr_id }}</div></div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><i class="fa fa-history"></i> 查询记录（{{ events|length }} 条）</div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead><tr><th>时间</th><th>国家 / 省市</th><th>查询方式</th><th>IP</th><th>结果</th></tr></thead>
+                <tbody>{% for event in events %}<tr>
+                    <td>{{ event.scan_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td>{{ event.country or '-' }}{% if event.province %} / {{ event.province }}{% endif %}{% if event.city %} / {{ event.city }}{% endif %}</td>
+                    <td>{{ event.scan_channel or event.platform or '-' }}</td>
+                    <td class="font-monospace small">{{ event.ip_address }}</td>
+                    <td>{{ {'success': '验证成功', 'warning': '重复警告', 'invalid': '无效编码'}.get(event.verification_result, event.verification_result) }}</td>
+                </tr>{% else %}<tr><td colspan="5" class="text-center text-muted py-4">暂无查询记录</td></tr>{% endfor %}</tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
