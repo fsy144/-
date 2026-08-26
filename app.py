@@ -98,6 +98,8 @@ class AntiFakeScanEvent(db.Model):
     __tablename__ = 'anti_fake_scan_events'
 
     id = db.Column(db.Integer, primary_key=True)
+    # .com 的 scan_logs.id 或实时上报 ID，用于支持安全重试而不重复记一条扫码。
+    source_event_id = db.Column(db.String(100), unique=True, index=True)
     qr_id = db.Column(
         db.String(64), db.ForeignKey('anti_fake_codes.qr_id'), nullable=False, index=True
     )
@@ -117,8 +119,6 @@ class AntiFakeSyncState(db.Model):
     __tablename__ = 'anti_fake_sync_state'
 
     id = db.Column(db.Integer, primary_key=True)
-    # .com 的 scan_logs.id 或实时上报 ID，用于支持安全重试而不重复记一条扫码。
-    source_event_id = db.Column(db.String(100), unique=True, index=True)
     source_name = db.Column(db.String(50), unique=True, nullable=False)
     last_code_id = db.Column(db.Integer, default=0, nullable=False)
     last_scan_log_id = db.Column(db.Integer, default=0, nullable=False)
