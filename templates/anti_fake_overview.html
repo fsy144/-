@@ -26,7 +26,7 @@
     <div class="card-body">
         <form method="get" class="row g-3">
             <div class="col-lg-4"><input name="keyword" value="{{ keyword }}" class="form-control" placeholder="防伪编号、QR ID、产品名或 IP"></div>
-            <div class="col-lg-2"><select name="result" class="form-select"><option value="">全部结果</option><option value="success" {% if result == 'success' %}selected{% endif %}>验证成功</option><option value="warning" {% if result == 'warning' %}selected{% endif %}>重复警告</option><option value="invalid" {% if result == 'invalid' %}selected{% endif %}>无效编码</option></select></div>
+            <div class="col-lg-2"><select name="result" class="form-select"><option value="">全部结果</option><option value="success" {% if result == 'success' %}selected{% endif %}>验证成功</option><option value="warning" {% if result == 'warning' %}selected{% endif %}>重复警告</option><option value="invalid" {% if result == 'invalid' %}selected{% endif %}>无效编码</option><option value="unknown" {% if result == 'unknown' %}selected{% endif %}>历史结果未记录</option></select></div>
             <div class="col-lg-2"><input name="start_date" type="date" value="{{ start_date }}" class="form-control"></div>
             <div class="col-lg-2"><input name="end_date" type="date" value="{{ end_date }}" class="form-control"></div>
             <div class="col-lg-2 d-flex gap-2"><button class="btn btn-primary flex-fill" type="submit"><i class="fa fa-search"></i> 查询</button><a class="btn btn-secondary" href="{{ url_for('anti_fake_overview') }}">重置</a></div>
@@ -49,7 +49,7 @@
                     <td>{{ event.province or event.country or '-' }}{% if event.city %} / {{ event.city }}{% endif %}</td>
                     <td>{{ event.scan_channel or event.platform or '-' }}</td>
                     <td class="code-cell">{{ event.ip_address }}</td>
-                    <td>{% if event.verification_result == 'success' %}<span class="badge text-bg-success">验证成功</span>{% elif event.verification_result == 'warning' %}<span class="badge text-bg-warning">重复警告</span>{% else %}<span class="badge text-bg-danger">无效编码</span>{% endif %}</td>
+                    <td>{% if event.verification_result == 'success' %}<span class="badge text-bg-success">验证成功</span>{% elif event.verification_result == 'warning' %}<span class="badge text-bg-warning">重复警告</span>{% elif event.verification_result == 'invalid' %}<span class="badge text-bg-danger">无效编码</span>{% else %}<span class="badge text-bg-secondary">历史结果未记录</span>{% endif %}</td>
                     <td><a href="{{ url_for('anti_fake_code_detail', code_id=event.anti_fake_code.id) }}" class="btn btn-sm btn-outline-primary">详情</a></td>
                 </tr>
                 {% else %}

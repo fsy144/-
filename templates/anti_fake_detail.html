@@ -32,7 +32,7 @@
                     <td>{{ event.country or '-' }}{% if event.province %} / {{ event.province }}{% endif %}{% if event.city %} / {{ event.city }}{% endif %}</td>
                     <td>{{ event.scan_channel or event.platform or '-' }}</td>
                     <td class="font-monospace small">{{ event.ip_address }}</td>
-                    <td>{{ {'success': '验证成功', 'warning': '重复警告', 'invalid': '无效编码'}.get(event.verification_result, event.verification_result) }}</td>
+                    <td>{{ {'success': '验证成功', 'warning': '重复警告', 'invalid': '无效编码', 'unknown': '历史结果未记录'}.get(event.verification_result, event.verification_result) }}</td>
                 </tr>{% else %}<tr><td colspan="5" class="text-center text-muted py-4">暂无查询记录</td></tr>{% endfor %}</tbody>
             </table>
         </div>

@@ -64,13 +64,15 @@ def sync_codes(source, state):
 
 def sync_events(source, state):
     imported = 0
+    source_columns = {row[1] for row in source.execute('PRAGMA table_info(scan_logs)')}
+    result_column = 'verification_result' if 'verification_result' in source_columns else "'unknown'"
     cursor = source.execute(
-        '''SELECT id, qr_id, ip_address, platform, scan_time
-           FROM scan_logs WHERE id > ? ORDER BY id''',
+        f'''SELECT id, qr_id, ip_address, platform, scan_time, {result_column}
+            FROM scan_logs WHERE id > ? ORDER BY id''',
         (state.last_scan_log_id,)
     )
     while rows := cursor.fetchmany(BATCH_SIZE):
-        for source_id, qr_id, ip_address, platform, scan_time in rows:
+        for source_id, qr_id, ip_address, platform, scan_time, result in rows:
             event_id = f'legacy:{source_id}'
             # 唯一事件 ID 使脚本即使被重复执行也不会重复导入。
             if not AntiFakeScanEvent.query.filter_by(source_event_id=event_id).first():
@@ -81,7 +83,7 @@ def sync_events(source, state):
                     ip_address=ip_address,
                     platform=platform,
                     scan_channel='二维码扫码',
-                    verification_result='success',
+                    verification_result=result or 'unknown',
                     scan_time=parse_scan_time(scan_time),
                     **location,
                 ))
@@ -89,6 +91,31 @@ def sync_events(source, state):
             state.last_scan_log_id = source_id
         db.session.commit()
     return imported
+
+
+def refresh_event_results(source):
+    """一次性将来源库中可用的真实核验结果写回已导入的历史记录。"""
+    source_columns = {row[1] for row in source.execute('PRAGMA table_info(scan_logs)')}
+    if 'verification_result' not in source_columns:
+        return 0
+
+    refreshed = 0
+    cursor = source.execute('SELECT id, verification_result FROM scan_logs ORDER BY id')
+    while rows := cursor.fetchmany(BATCH_SIZE):
+        event_ids = [f'legacy:{source_id}' for source_id, _ in rows]
+        events = {
+            event.source_event_id: event
+            for event in AntiFakeScanEvent.query.filter(
+                AntiFakeScanEvent.source_event_id.in_(event_ids)
+            ).all()
+        }
+        for source_id, result in rows:
+            event = events.get(f'legacy:{source_id}')
+            if event and event.verification_result != (result or 'unknown'):
+                event.verification_result = result or 'unknown'
+                refreshed += 1
+        db.session.commit()
+    return refreshed
 
 
 def enrich_existing_events(force=False):
@@ -127,10 +154,11 @@ def main():
         with source_connection() as source:
             code_count = sync_codes(source, state)
             event_count = sync_events(source, state)
+            result_count = refresh_event_results(source) if '--refresh-results' in sys.argv else 0
         location_count = enrich_existing_events(force='--refresh-locations' in sys.argv)
         print(
             f'同步完成：防伪码 {code_count} 条，扫码记录 {event_count} 条，'
-            f'归属地补全 {location_count} 条。'
+            f'归属地补全 {location_count} 条，核验结果刷新 {result_count} 条。'
         )
 
 
