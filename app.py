@@ -10,6 +10,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 from functools import wraps
 import hmac
+from ip_location import lookup_ip_location
 
 app = Flask(__name__)
 app.config.from_pyfile('config.py')
@@ -439,14 +440,16 @@ def receive_anti_fake_event():
         except (TypeError, ValueError):
             pass
 
+    location = lookup_ip_location(str(payload['ip_address']).strip())
+
     db.session.add(AntiFakeScanEvent(
         source_event_id=event_id,
         qr_id=qr_id,
         scan_time=scan_time,
         ip_address=str(payload['ip_address']).strip(),
-        country=str(payload.get('country', '')).strip() or None,
-        province=str(payload.get('province', '')).strip() or None,
-        city=str(payload.get('city', '')).strip() or None,
+        country=str(payload.get('country', '')).strip() or location['country'],
+        province=str(payload.get('province', '')).strip() or location['province'],
+        city=str(payload.get('city', '')).strip() or location['city'],
         platform=str(payload.get('platform', '')).strip() or None,
         scan_channel=str(payload.get('scan_channel', '')).strip() or None,
         verification_result=result,

@@ -11,6 +11,7 @@ import sqlite3
 from datetime import datetime
 
 from app import app, db, AntiFakeCode, AntiFakeScanEvent, AntiFakeSyncState
+from ip_location import lookup_ip_location
 
 
 SOURCE_DB_PATH = os.environ.get(
@@ -72,6 +73,7 @@ def sync_events(source, state):
             event_id = f'legacy:{source_id}'
             # 唯一事件 ID 使脚本即使被重复执行也不会重复导入。
             if not AntiFakeScanEvent.query.filter_by(source_event_id=event_id).first():
+                location = lookup_ip_location(ip_address)
                 db.session.add(AntiFakeScanEvent(
                     source_event_id=event_id,
                     qr_id=qr_id,
@@ -80,11 +82,31 @@ def sync_events(source, state):
                     scan_channel='二维码扫码',
                     verification_result='success',
                     scan_time=parse_scan_time(scan_time),
+                    **location,
                 ))
                 imported += 1
             state.last_scan_log_id = source_id
         db.session.commit()
     return imported
+
+
+def enrich_existing_events():
+    """为已导入但尚无归属地的历史扫码记录补充省市信息。"""
+    enriched = 0
+    while True:
+        events = AntiFakeScanEvent.query.filter(
+            db.or_(AntiFakeScanEvent.country.is_(None), AntiFakeScanEvent.country == '')
+        ).limit(BATCH_SIZE).all()
+        if not events:
+            break
+        for event in events:
+            location = lookup_ip_location(event.ip_address)
+            event.country = location['country']
+            event.province = location['province']
+            event.city = location['city']
+            enriched += 1
+        db.session.commit()
+    return enriched
 
 
 def main():
@@ -98,7 +120,11 @@ def main():
         with source_connection() as source:
             code_count = sync_codes(source, state)
             event_count = sync_events(source, state)
-        print(f'同步完成：防伪码 {code_count} 条，扫码记录 {event_count} 条。')
+        location_count = enrich_existing_events()
+        print(
+            f'同步完成：防伪码 {code_count} 条，扫码记录 {event_count} 条，'
+            f'归属地补全 {location_count} 条。'
+        )
 
 
 if __name__ == '__main__':
