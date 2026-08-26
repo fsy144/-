@@ -8,6 +8,7 @@
 """
 import os
 import sqlite3
+import sys
 from datetime import datetime
 
 from app import app, db, AntiFakeCode, AntiFakeScanEvent, AntiFakeSyncState
@@ -90,24 +91,26 @@ def sync_events(source, state):
     return imported
 
 
-def enrich_existing_events():
+def enrich_existing_events(force=False):
     """为已导入但尚无归属地的历史扫码记录补充省市信息。"""
     enriched = 0
     last_id = 0
     while True:
-        events = AntiFakeScanEvent.query.filter(
-            AntiFakeScanEvent.id > last_id,
-            db.or_(AntiFakeScanEvent.country.is_(None), AntiFakeScanEvent.country == '')
-        ).order_by(AntiFakeScanEvent.id).limit(BATCH_SIZE).all()
+        query = AntiFakeScanEvent.query.filter(AntiFakeScanEvent.id > last_id)
+        if not force:
+            query = query.filter(
+                db.or_(AntiFakeScanEvent.country.is_(None), AntiFakeScanEvent.country == '')
+            )
+        events = query.order_by(AntiFakeScanEvent.id).limit(BATCH_SIZE).all()
         if not events:
             break
         for event in events:
             location = lookup_ip_location(event.ip_address)
-            event.country = location['country']
-            event.province = location['province']
-            event.city = location['city']
             last_id = event.id
             if any(location.values()):
+                event.country = location['country']
+                event.province = location['province']
+                event.city = location['city']
                 enriched += 1
         db.session.commit()
     return enriched
@@ -124,7 +127,7 @@ def main():
         with source_connection() as source:
             code_count = sync_codes(source, state)
             event_count = sync_events(source, state)
-        location_count = enrich_existing_events()
+        location_count = enrich_existing_events(force='--refresh-locations' in sys.argv)
         print(
             f'同步完成：防伪码 {code_count} 条，扫码记录 {event_count} 条，'
             f'归属地补全 {location_count} 条。'
