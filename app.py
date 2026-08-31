@@ -12,6 +12,34 @@ from functools import wraps
 import hmac
 from ip_location import lookup_ip_location
 
+
+_LOCATION_ENGLISH = {
+    '中国': 'China', '美国': 'United States', '新西兰': 'New Zealand', '澳大利亚': 'Australia',
+    '加拿大': 'Canada', '日本': 'Japan', '韩国': 'South Korea', '新加坡': 'Singapore',
+    '英国': 'United Kingdom', '德国': 'Germany', '法国': 'France', '内网IP': 'Private Network',
+    '辽宁省': 'Liaoning', '江苏省': 'Jiangsu', '浙江省': 'Zhejiang', '广东省': 'Guangdong',
+    '山东省': 'Shandong', '福建省': 'Fujian', '四川省': 'Sichuan', '湖北省': 'Hubei',
+    '湖南省': 'Hunan', '河北省': 'Hebei', '河南省': 'Henan', '安徽省': 'Anhui',
+    '陕西省': 'Shaanxi', '山西省': 'Shanxi', '黑龙江省': 'Heilongjiang', '吉林省': 'Jilin',
+    '云南省': 'Yunnan', '贵州省': 'Guizhou', '广西': 'Guangxi', '海南省': 'Hainan',
+    '北京市': 'Beijing', '上海市': 'Shanghai', '天津市': 'Tianjin', '重庆市': 'Chongqing',
+    '大连市': 'Dalian', '本机/内网': 'Local / Private Network',
+}
+
+
+def format_location_english(country, province, city):
+    """详情页只输出英文；未收录的中文地区不会原样展示。"""
+    values = []
+    for value in (country, province, city):
+        if not value:
+            continue
+        translated = _LOCATION_ENGLISH.get(value)
+        if translated:
+            values.append(translated)
+        elif not any('\u4e00' <= char <= '\u9fff' for char in value):
+            values.append(value)
+    return ' / '.join(values) or '-'
+
 app = Flask(__name__)
 app.config.from_pyfile('config.py')
 app.config['SESSION_COOKIE_SECURE'] = True
@@ -395,7 +423,10 @@ def anti_fake_code_detail(code_id):
     events = AntiFakeScanEvent.query.filter_by(qr_id=code.qr_id).order_by(
         AntiFakeScanEvent.scan_time.desc()
     ).all()
-    return render_template('anti_fake_detail.html', code=code, events=events)
+    return render_template(
+        'anti_fake_detail.html', code=code, events=events,
+        format_location_english=format_location_english
+    )
 
 
 @app.route('/api/anti-fake/events', methods=['POST'])
